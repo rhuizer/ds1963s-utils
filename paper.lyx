@@ -1,0 +1,691 @@
+#LyX 2.0 created this file. For more info see http://www.lyx.org/
+\lyxformat 413
+\begin_document
+\begin_header
+\textclass article
+\begin_preamble
+\renewcommand{\thefootnote}{\fnsymbol{footnote}}
+\hyphenation{VirtualAllocEx kernel CreateRemoteThread HMODULE}
+\end_preamble
+\use_default_options false
+\maintain_unincluded_children false
+\language english
+\language_package default
+\inputencoding auto
+\fontencoding global
+\font_roman ae
+\font_sans default
+\font_typewriter default
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_osf false
+\font_sf_scale 100
+\font_tt_scale 100
+
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\paperfontsize default
+\spacing single
+\use_hyperref false
+\papersize default
+\use_geometry false
+\use_amsmath 1
+\use_esint 0
+\use_mhchem 0
+\use_mathdots 1
+\cite_engine basic
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\use_refstyle 0
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\quotes_language english
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tracking_changes false
+\output_changes false
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\end_header
+
+\begin_body
+
+\begin_layout Title
+A novel attack on the DS1963S iButton
+\end_layout
+
+\begin_layout Author
+Ronald Huizer (r.huizer@xs4all.nl)
+\end_layout
+
+\begin_layout Standard
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+
+\backslash
+setlength
+\backslash
+parindent{0pt}
+\end_layout
+
+\begin_layout Plain Layout
+
+
+\backslash
+setlength
+\backslash
+parskip{2ex plus 0.5ex minus 0.5ex}
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Abstract
+We will present a novel attack on leaking secret data from the DS1963S iButton,
+ which is reduces the complexity of leaking secret data from 
+\begin_inset Formula $2^{64}$
+\end_inset
+
+ to 
+\begin_inset Formula $2^{11}$
+\end_inset
+
+ attempts.
+\end_layout
+
+\begin_layout Section
+Introduction
+\end_layout
+
+\begin_layout Standard
+The DS1963S iButton is lightweight button-shaped SHA-1 processor that is
+ used as an electronic cash system, and as an access token for authentication.
+ The system is used in practice for micro-payments in several countries,
+ such as Istanbul, where it is used as part of the AKBIL system to pay for
+ public transportation and Brazil, where they can be used to pay at parking
+ meters.
+ General information on iButtons can be found in 
+\begin_inset CommandInset citation
+LatexCommand citet
+key "imanual"
+
+\end_inset
+
+ and more specific information on the DS1963S can be found in 
+\begin_inset CommandInset citation
+LatexCommand citet
+key "ds1963s"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+The security model of the DS1963S is based on 8 64-bit secrets which are
+ used as keys in the SHA-1 HMAC calculations the button performs for signing,
+ verification, and authentication.
+ The security of the system is largely dependent on the inability to read
+ the secrets, as being able to do so would open the door for button duplication,
+ and emulation.
+ The button takes care to prevent all read access to the secret memory,
+ and also possible leakage of the secret memory to other memory areas which
+ can be read.
+\end_layout
+
+\begin_layout Standard
+The DS1963S secret memory has been successfully dumped by 
+\begin_inset CommandInset citation
+LatexCommand citet
+key "ibsec"
+
+\end_inset
+
+ using a fault attack.
+ His method was presented at 27C3 and involves having to disassemble the
+ iButton in order to determine the secrets.
+ Although very interesting, his method is destructive and requires specialized
+ hardware and electrical engineering knowledge.
+\end_layout
+
+\begin_layout Standard
+We will introduce and implement a novel software-only attack on the DS1963S
+ iButton that is able to retrieve secrets memory used in the SHA-1 HMAC
+ functions of the device in 
+\begin_inset Formula $2^{11}$
+\end_inset
+
+ attempts in the worst case.
+ It therefore significantly improves on brute-force methods on secrets,
+ which would need 
+\begin_inset Formula $2^{64}$
+\end_inset
+
+ attempts in the worst case.
+\end_layout
+
+\begin_layout Standard
+We have earlier hypothesized the existence of this attack during our presentatio
+n at Infiltrate 2011 -- see 
+\begin_inset CommandInset citation
+LatexCommand citet
+key "arcadehack"
+
+\end_inset
+
+.
+ Although this observation proved to be insufficient by itself, it is used
+ in our current attack, combined with another design issue we have found
+ and which at the time of writing has not been published.
+\end_layout
+
+\begin_layout Section
+Architecture
+\end_layout
+
+\begin_layout Standard
+Prior to describing the attack on the iButton, we will present a quick overview
+ of the architecture as is relevant to the attack.
+ A more thorough description of the architecture can be found in 
+\begin_inset CommandInset citation
+LatexCommand citet
+key "ds1963s"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Subsection
+Memory
+\end_layout
+
+\begin_layout Standard
+The DS1963S has several different memory pages of 256-bit each.
+ The first 8 pages are regular data memory.
+ These pages can be referenced using page #0 through 7, and the same pages
+ can be references as page #8 through 15 in order to automatically increment
+ the associated write cycle counter.
+\end_layout
+
+\begin_layout Standard
+Page 16 and 17 are used to store 8 secrets each of which 64-bit in size.
+ Each regular data page number is associated with both a write cycle number
+ and a secret number.
+ For example, page #5 would use write-cycle counter #5 and secret #5 in
+ operations where either of the two is applicable.
+\end_layout
+
+\begin_layout Standard
+Further pages include counter memory, secret write cycle counters, the scratchpa
+d and a PRNG counter.
+ Except for the scratchpad, which resides on page #18 and will be described
+ later, the other pages are outside the scope of this article.
+\end_layout
+
+\begin_layout Subsection
+Memory addressing
+\end_layout
+
+\begin_layout Standard
+The DS1963S uses two 8-bit 
+\emph on
+target address
+\emph default
+ (TA1 and TA2) registers, and an 
+\emph on
+ending address
+\emph default
+ register (E/S which contains both the ending address and several status
+ bits we will not discuss), which are used differently depending on the
+ operation performed, but generally denote the start and end addresses in
+ memory.
+ Although pages are used to describe the memory model, the addressing scheme
+ itself does not explicitly use page number, but rather view the memory
+ space as a flat byte granular sequence of addresses.
+ For example, as pages are 256-bit in size, page #5 would start at address
+ 0xA0.
+\end_layout
+
+\begin_layout Standard
+The target address registers are often described by target address byte
+ indices, where T0 is the lowest significant byte of TA1, T7 the highest
+ significant byte of TA1, T8 the lowest significant byte of TA2 and T15
+ the highest significant byte of TA2.
+ The lowest significant byte of E/S is E0, and the 5th lowest significant
+ byte of E/S is E4.
+ The other bytes in E/S are flag data.
+\end_layout
+
+\begin_layout Subsection
+Scratchpad
+\end_layout
+
+\begin_layout Standard
+The 256-bit scratchpad serves as temporary latch memory to copy data from
+ the bus master to the iButton and vice versa.
+ When retrieving data from and writing data to memory pages, the scratchpad
+ is used as an in between buffer.
+\end_layout
+
+\begin_layout Standard
+Readability of the scratchpad is governed by the HIDE flag: when set, attempting
+ to read the scratchpad will result in 1-bits, and when unset scratchpad
+ content can be read.
+ As the scratchpad is used by the internal HMAC engine, the HIDE flag is
+ used to ensure no security critical information can be leaked through the
+ scratchpad buffer.
+\end_layout
+
+\begin_layout Subsection
+HIDE flag
+\end_layout
+
+\begin_layout Standard
+The DS1963S security model is based on the HIDE flag, which governs whether
+ the scratchpad can be read or not, and whether secret pages can be written
+ to or not.
+ The HIDE flag is set implicitly by various SHA related operations, and
+ set explicitly when a power-on reset is performed.
+ A power-on reset is normally performed by breaking the connection between
+ the iButton and the socket.
+ This behavior can be emulated for 1-wire RS232 connected devices by pulling
+ the RTS and DTR lines low for a certain amount of time
+\begin_inset Foot
+status collapsed
+
+\begin_layout Plain Layout
+The implementation of the attack uses a 1 second interval for this.
+\end_layout
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Subsection
+Operations
+\end_layout
+
+\begin_layout Standard
+The DS1963S offers a wide variety of operations, but we will limit our discussio
+n to the operations relevant to our attack.
+\end_layout
+
+\begin_layout Subsubsection
+Write scratchpad (0x0F)
+\end_layout
+
+\begin_layout Standard
+The write scratchpad command has two modi operandi, depending on whether
+ the HIDE flag is set or not.
+ When the HIDE flag is unset, the bus master can use this command by sending
+ the opcode, a 2-byte target address, and the data to be written to scratchpad
+ memory.
+ T4:T0 specifies the offset within scratchpad memory the data is written
+ to, and E4:E0 specifies the end offset.
+ The target and ending addresses are limited to the address range [0, 0x1FF].
+\end_layout
+
+\begin_layout Standard
+When the HIDE flag is set, the operation is meant to update the target and
+ ending address registers to prepare them for writing data to secret memory.
+ As such, the target and ending addresses are limited to the secret memory
+ range [0x200, 0x23F].
+ Note that this operation does not modify the scratchpad or any memory,
+ but just updates TA1, TA2 and E/S.
+\end_layout
+
+\begin_layout Subsubsection
+Read scratchpad (0xAA)
+\end_layout
+
+\begin_layout Standard
+The read scratchpad command is used by the bus master to read the TA1, TA2,
+ and E/S bytes, as well as the scratchpad data from the scratchpad.
+ In case the HIDE flag is set, the data read will be logical 1-bits.
+\end_layout
+
+\begin_layout Subsubsection
+Copy scratchpad (0x55)
+\end_layout
+
+\begin_layout Standard
+The copy scratchpad command is used to copy data from the scratchpad to
+ a memory page.
+ The command expects TA1, TA2, and E/S to be sent by the bus master, and
+ these should be equal to the values of the corresponding DS1963S registers.
+ When the HIDE flag is unset, addresses [0, 0x1FF] can be written, and when
+ the HIDE flag is set addresses [0x200, 0x23F] can be written.
+\end_layout
+
+\begin_layout Subsubsection
+Erase scratchpad (0xC3)
+\end_layout
+
+\begin_layout Standard
+The erase scratchpad command will clear the HIDE flag and fill the scratchpad
+ with 1-bits.
+\end_layout
+
+\begin_layout Subsubsection
+Compute SHA (0x33) -- Sign data page (0xC3)
+\end_layout
+
+\begin_layout Standard
+The compute SHA function allows several different SHA co-processor functions
+ to be called.
+ Our attack only uses one: the sign data page function.
+ This function will calculate a HMAC over page #0 or #8 using secret #0,
+ and 15-bytes of scratchpad data.
+\end_layout
+
+\begin_layout Section
+Complexity reduction
+\end_layout
+
+\begin_layout Standard
+The first security relevant issue on the DS1963S is the granularity of writes
+ to secret pages.
+ As we have seen in the architectural overview, it is possible to write
+ raw secret data to secret pages by writing data to the scratchpad using
+ the 
+\emph on
+write scratchpad
+\emph default
+ command, setting the HIDE flag, and using the 
+\emph on
+write scratchpad
+\emph default
+ command to set TA1, TA2, and ES to secret memory, and finally writing the
+ scratchpad into secret memory using the 
+\emph on
+copy scratchpad
+\emph default
+ command.
+\end_layout
+
+\begin_layout Standard
+If we assume we can fully control TA1, TA2, and ES at this point, we could
+ attempt to partially overwrite secret data, rather than overwriting a full
+ secret at a time.
+ This would result in a complexity reduction attack.
+\end_layout
+
+\begin_layout Standard
+For instance, consider we are using the 
+\emph on
+sign data page
+\emph default
+ SHA function, which calculates the HMAC over the secret, data of a selected
+ memory page, and 15 bytes of scratchpad data.
+ If we set the data of the selected memory page and the 15 bytes of scratchpad
+ data to 0-bytes, the only variable is the secret page.
+ First of all, we would calculate the signature over this zero byte data,
+ and store the resulting signature.
+ Next, we would write the first byte of secret memory using our idea to
+ modify only the first byte of the secret, and leave the rest alone.
+ Then we recalculate the signature and see if it matches the original we
+ found.
+ If it does not, we increment the byte we have written, otherwise we have
+ found the right secret data byte.
+ We repeat this process on a byte by byte basis until the whole secret has
+ been recovered.
+ This would reduce the complexity of calculating the secret from 
+\begin_inset Formula $2^{64}$
+\end_inset
+
+ to 
+\begin_inset Formula $2^{11}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Section
+Protocol flaw
+\end_layout
+
+\begin_layout Standard
+The DS1963S avoids the complexity reduction attack by allowing the 
+\emph on
+write scratchpad
+\emph default
+ command to only update TA1, TA2 and ES in such a way that full secrets
+ are written at a time when the HIDE flag is set.
+ In the state machine diagrams in 
+\begin_inset CommandInset citation
+LatexCommand citet
+key "ds1963s"
+
+\end_inset
+
+ this is outlined by the T2:T0 = 0, 0, 0 and E4:E0 = T4, T3, 1, 1, 1 entry.
+ This means security against this attack will come down to the ability or
+ inability to update TA1, TA2, and ES in such a way that they refer to secret
+ memory while not referencing a full secret.
+\end_layout
+
+\begin_layout Standard
+However, the state diagram contains an interesting state, as the bus master
+ transmits TA1, and TA2 prior to checking whether the HIDE flag is set,
+ and verifying whether memory is data memory or secret memory.
+ This means that when the HIDE flag is unset, TA1 and TA2 can be updated
+ to point into secret memory (regardless of the HIDE flag), and the security
+ modifications T2:T0 = 0, 0, 0 and E4:E0 = T4, T3, 1, 1, 1 will never be
+ executed.
+ As a reset to set the HIDE flag 
+\emph on
+preserves
+\emph default
+ the TA1, TA2 and ES registers, we have a way to set TA1 and TA2 to refer
+ to secret memory a byte at a time.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float algorithm
+placement H
+wide false
+sideways false
+status collapsed
+
+\begin_layout Enumerate
+Set TA1, and TA2 using the 
+\emph on
+write scratchpad
+\emph default
+ command to refer to a byte within a secret.
+\end_layout
+
+\begin_layout Enumerate
+Power-on reset the iButton to set the HIDE flag.
+\end_layout
+
+\begin_layout Enumerate
+Use the 
+\emph on
+copy data
+\emph default
+ command to selectively overwrite a byte of secret memory.
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+Partial secret overwrite.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Section
+The attack
+\end_layout
+
+\begin_layout Standard
+The full attack is outlined below, and combines the protocol flaw with the
+ complexity reduction attack.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float algorithm
+placement H
+wide false
+sideways false
+status collapsed
+
+\begin_layout Enumerate
+Use the 
+\emph on
+write scratchpad
+\emph default
+ command to fill the scratchpad with 0-bytes.
+\end_layout
+
+\begin_layout Enumerate
+Use the 
+\emph on
+copy data
+\emph default
+ command to copy the scratchpad zero bytes into memory page #0.
+\end_layout
+
+\begin_layout Enumerate
+Use the 
+\emph on
+sign data page
+\emph default
+ SHA function to calculate a HMAC over page #0, 15 bytes of scratchpad,
+ and secret #0.
+\end_layout
+
+\begin_layout Enumerate
+Read the signature from the scratchpad using the 
+\emph on
+read scratchpad
+\emph default
+ command, and store this as the target signature.
+\end_layout
+
+\begin_layout Enumerate
+Set the guessed secret to 0 bytes, and the secret index n to 0.
+\end_layout
+
+\begin_layout Enumerate
+Overwrite the secret #0 byte at index n with the next value using Algorithm
+ 1.
+\end_layout
+
+\begin_layout Enumerate
+Calculate the signature using 
+\emph on
+sign data page
+\emph default
+.
+ If the signature matches the target signature, we have the correct byte
+ and increment n.
+ Otherwise we increment the guessed secret byte at index n.
+\end_layout
+
+\begin_layout Enumerate
+If all secret bytes have been found, we're done and have the secret, otherwise
+ we go to step 6.
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+Full attack against secret #0.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Section
+Demonstration
+\end_layout
+
+\begin_layout Standard
+This paper is bundled with the source code, and two Linux 
+\emph on
+typescript 
+\emph default
+files of an example run against a physical dongle which can be replayed
+ using the command: 
+\emph on
+scriptreplay -t example.timing example.script
+\end_layout
+
+\begin_layout Section
+Conclusion
+\end_layout
+
+\begin_layout Standard
+We have demonstrated a practical complexity reduction attack against the
+ iButton DS1963S which reduces the complexity of leaking secret data from
+ 
+\begin_inset Formula $2^{64}$
+\end_inset
+
+ to 
+\begin_inset Formula $2^{11}$
+\end_inset
+
+.
+ As this attack uses the 
+\emph on
+sign data page
+\emph default
+ SHA function, it is limited to data page 0 only.
+ Further research is needed to see if this attack can be extended to other
+ secrets by using different SHA functions.
+\end_layout
+
+\begin_layout Standard
+\begin_inset CommandInset bibtex
+LatexCommand bibtex
+bibfiles "refs"
+options "acm"
+
+\end_inset
+
+
+\end_layout
+
+\end_body
+\end_document

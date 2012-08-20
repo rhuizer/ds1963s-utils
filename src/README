@@ -1,0 +1,2 @@
+
+BUILD AS: gcc ibutton-brute.c ibutton.c ibutton/*.c -o ibutton-brute
