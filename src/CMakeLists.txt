@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 2.6)
+project(ibutton-brute)
+add_subdirectory(ibutton)
+add_executable(ibutton-brute ibutton-brute.c ibutton.c)
+target_link_libraries(ibutton-brute ibutton)
