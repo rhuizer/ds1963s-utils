@@ -1,4 +1,6 @@
+#include <assert.h>
 #include <stdint.h>
+#include "getput.h"
 #include "ibutton.h"
 #include "ibutton/ownet.h"
 #include "ibutton/shaib.h"
@@ -97,4 +99,33 @@ ibutton_scratchpad_write(int portnum, uint16_t address, const char *data, size_t
 	owTouchReset(portnum);
 
 	return 0;
+}
+
+inline int __write_cycle_address(int write_cycle_type)
+{
+	assert(write_cycle_type >= WRITE_CYCLE_DATA_8);
+	assert(write_cycle_type <= WRITE_CYCLE_SECRET_7);
+
+	return 0x260 + write_cycle_type * 4;
+}
+
+uint32_t ibutton_write_cycle_get(int portnum, int write_cycle_type)
+{
+	int address = __write_cycle_address(write_cycle_type);
+	uint8_t block[7];
+
+	OWASSERT(SelectSHA(portnum), OWERROR_ACCESS_FAILED, FALSE);
+
+	memset(block, 0xff, 7);
+	/* write scratchpad command */
+	block[0] = CMD_READ_MEMORY;
+	/* TA1, which fully holds the offset. */
+	block[1] = address & 0xFF;
+	/* TA2, which is unused. */
+	block[2] = address >> 8;
+
+	OWASSERT(owBlock(portnum, 0, block, 7), OWERROR_BLOCK_FAILED, FALSE);
+	owTouchReset(portnum);
+
+	return GET_32BIT_LSB(&block[3]);
 }
