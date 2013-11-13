@@ -66,26 +66,20 @@ int ds1963s_client_taes_print(struct ds1963s_client *ctx)
 	uint16_t addr;
 	uint8_t es;
 
-
-	if (ds1963s_client_taes_get(ctx, &addr, &es) == -1) {
-		ibutton_perror("kak");
+	if (ds1963s_client_taes_get(ctx, &addr, &es) == -1)
 		return -1;
-	}
 
-	printf("TA1: 0x%.2x TA2: 0x%.2x E/S: 0x%.2x\n",
+	printf("TA2: 0x%.2x TA1: 0x%.2x E/S: 0x%.2x\n",
 		addr >> 8, addr & 0xff, es);
 }
 
 int
 ds1963s_client_taes_get(struct ds1963s_client *ctx, uint16_t *addr, uint8_t *es)
 {
+	uint8_t buf[DS1963S_SCRATCHPAD_SIZE];
 	int portnum = ctx->copr.portnum;
-	uint8_t buf[32];
 	uint8_t __es;
 	int __addr;
-
-//        OWASSERT(EraseScratchpadSHA18(portnum, 0, FALSE),
-//                 OWERROR_ERASE_SCRATCHPAD_FAILED, -1);
 
         OWASSERT(ReadScratchpadSHA18(portnum, &__addr, &__es, buf, 0),
                  OWERROR_READ_SCRATCHPAD_FAILED, -1);
@@ -97,6 +91,48 @@ ds1963s_client_taes_get(struct ds1963s_client *ctx, uint16_t *addr, uint8_t *es)
 		*es = __es;
 
 	return 0;
+}
+
+ssize_t
+ds1963s_scratchpad_read_resume(struct ds1963s_client *ctx, uint8_t *dst,
+                               size_t size, uint16_t *addr, uint8_t *es,
+                               int resume)
+{
+	int portnum = ctx->copr.portnum;
+	size_t bytes_read;
+	uint8_t buf[40];
+	uint16_t crc;
+	int i = 0;
+
+	if (resume)
+		buf[i++] = ROM_CMD_RESUME;
+	else
+		OWASSERT(SelectSHA(portnum), OWERROR_ACCESS_FAILED, -1);
+
+	buf[i++] = CMD_READ_SCRATCHPAD;
+
+	/* Padding for transmission of TA1 TA2 E/S CRC16 and data. */
+	memset(&buf[i], 0xff, 37);
+	i += 37;
+
+	/* Send the buffer out. */
+	OWASSERT(owBlock(portnum, resume, buf, i), OWERROR_BLOCK_FAILED, -1);
+
+	/* Calculate the bytes read from the scratchpad based on TA1(4:0). */
+	bytes_read = buf[!!resume + 1];
+	bytes_read = 32 - (bytes_read & 0x1F);
+
+	/* Calculate the CRC16. */
+	crc = ds1963s_crc16(&buf[!!resume], bytes_read + !!resume + 6);
+
+	/* The CRC16 should be equal to 0xB001. */
+	OWASSERT(crc == 0xB001, OWERROR_CRC_FAILED, -1);
+
+	/* Copy the data we've read. */
+	memcpy(dst, &buf[!!resume + 4], MIN(bytes_read, size));
+
+	/* Return the number of bytes read. */
+	return bytes_read;
 }
 
 int ds1963s_client_serial_get(struct ds1963s_client *ctx, uint8_t serial[6])
@@ -358,6 +394,30 @@ uint8_t ds1963s_crc8(const uint8_t *buf, size_t count)
 
 	for (i = 0; i < count; i++)
 		crc = ds1963s_crc8_table[crc ^ buf[i]];
+
+	return crc;
+}
+
+static uint8_t oddparity[16] = { 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0 };
+
+uint16_t ds1963s_crc16(const uint8_t *buf, size_t count)
+{
+	uint16_t crc = 0;
+	uint8_t byte;
+	size_t i;
+
+	for (i = 0; i < count; i++) {
+		byte = byte ^ crc;
+		crc >>= 8;
+
+		if (oddparity[byte & 0xf] ^ oddparity[byte >> 4])
+			crc ^= 0xc001;
+
+		byte <<= 6;
+		crc ^= byte;
+		byte <<= 1;
+		crc ^= byte;
+	}
 
 	return crc;
 }

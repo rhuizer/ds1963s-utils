@@ -87,13 +87,6 @@ SHA1_Transform(u_int32_t state[5], const unsigned char buffer[64])
     R4(d,e,a,b,c,72); R4(c,d,e,a,b,73); R4(b,c,d,e,a,74); R4(a,b,c,d,e,75);
     R4(e,a,b,c,d,76); R4(d,e,a,b,c,77); R4(c,d,e,a,b,78); R4(b,c,d,e,a,79);
 
-	printf("A: %x\n", a);
-	printf("B: %x\n", b);
-	printf("C: %x\n", c);
-	printf("D: %x\n", d);
-	printf("E: %x\n", e);
-
-
     /* Add the working vars back into context.state[] */
     state[0] += a;
     state[1] += b;
