@@ -171,7 +171,7 @@ extern SMALLINT ReadScratchpadSHA18(int portnum, int* address,
                                     uchar* es, uchar* data,
                                     SMALLINT resume);
 extern SMALLINT WriteScratchpadSHA18(int portnum, int address,
-                                     uchar *data, SMALLINT data_len,
+                                     const uchar *data, SMALLINT data_len,
                                      SMALLINT resume);
 extern SMALLINT CopyScratchpadSHA18(int portnum, int address,
                                     SMALLINT len, SMALLINT resume);

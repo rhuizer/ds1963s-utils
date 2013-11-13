@@ -196,8 +196,8 @@ SMALLINT DS2480Detect(int portnum);
 SMALLINT DS2480ChangeBaud(int portnum, uchar newbaud);
 
 // link functions from win32lnk.c or other link files
-SMALLINT  OpenCOM(int portnum, char *port_zstr);
-int       OpenCOMEx(char *port_zstr);
+SMALLINT  OpenCOM(int portnum, const char *port_zstr);
+int       OpenCOMEx(const char *port_zstr);
 void      CloseCOM(int portnum);
 void      FlushCOM(int portnum);
 SMALLINT  WriteCOM(int portnum, int outlen, uchar *outbuf);

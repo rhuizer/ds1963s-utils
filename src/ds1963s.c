@@ -1,131 +1,323 @@
-#include <stdio.h>
-#include <string.h>
+#include <assert.h>
 #include <stdint.h>
-#include "sha1.h"
+#include "getput.h"
 #include "ds1963s.h"
+#include "ibutton/ownet.h"
+#include "ibutton/shaib.h"
 
-static uint8_t __mpx_get(int M, int X, uint8_t *SP)
+int ds1963s_client_init(struct ds1963s_client *ctx, const char *device)
 {
-	return (M << 7) | (X << 6) | (SP[12] & 0x1F);
+	SHACopr *copr = &ctx->copr;
+
+	/* Get port. */
+	if ( (copr->portnum = owAcquireEx(device)) == -1)
+		return -1;
+
+	/* Find DS1963S iButton. */
+	if (FindNewSHA(copr->portnum, copr->devAN, TRUE) == FALSE)
+		return -1;
+
+	/* Default the resume flag to FALSE. */
+	ctx->resume = 0;
 }
 
-/* Construct the SHA-1 input for the following operations:
- *
- * - Validate Data Page
- * - Sign Data Page
- * - Authenticate Host
- * - Compute First Secret
- * - Compute Next Secret
- */
-static void __sha1_get_input_1(uint8_t M[64], uint8_t *SS, uint8_t *PP,
-                               uint8_t MPX, uint8_t *SP)
+void ds1963s_client_destroy(struct ds1963s_client *ctx)
 {
+	owRelease(ctx->copr.portnum);
+}
+
+int ds1963s_client_page_to_address(int page)
+{
+	/* XXX: set error. */
+	if (page < 0 || page > 21)
+		return -1;
+
+	return page * 32;
+}
+
+int ds1963s_client_address_to_page(int address)
+{
+	/* XXX: set error. */
+	if (address < 0 || address > 0x2c0)
+		return -1;
+
+	return address / 32;
+}
+
+int ds1963s_client_rom_get(struct ds1963s_client *ctx, struct ds1963s_rom *rom)
+{
+	int portnum = ctx->copr.portnum;
+	uint8_t data[8];
+
+	owSerialNum(portnum, data, TRUE);
+
+	if (ds1963s_crc8(data, 8) != 0)
+		return -1;
+
+	rom->family = data[0];
+	memcpy(rom->serial, &data[1], 6);
+	rom->crc = data[7];
+
+	return 0;
+}
+
+int ds1963s_client_serial_get(struct ds1963s_client *ctx, uint8_t serial[6])
+{
+	struct ds1963s_rom rom;
+
+	if (ds1963s_client_rom_get(ctx, &rom) == -1)
+		return -1;
+
+	memcpy(serial, rom.serial, 6);
+
+	return 0;
+}
+
+#if 0
+int ibutton_secret_zero(int portnum, int pagenum, int secretnum, int resume)
+{
+	char secret_scratchpad[32];
+	int addr = pagenum << 5;
+	char secret_data[32];
+
+	memset(secret_scratchpad, 0, 32);
+	memset(secret_data, 0, 32);
+
+	if (WriteDataPageSHA18(portnum, pagenum, secret_data, resume) == FALSE)
+		return -1;
+
+	if (WriteScratchpadSHA18(portnum, addr, secret_scratchpad, 32, TRUE) == FALSE)
+		return -1;
+
+	if (SHAFunction18(portnum, (uchar)SHA_COMPUTE_FIRST_SECRET, addr, TRUE) == FALSE)
+		return -1;
+
+	if (CopySecretSHA18(portnum, secretnum) == FALSE)
+		return -1;
+
+	return 0;
+}
+
+#endif
+
+int
+ds1963s_scratchpad_write(struct ds1963s_client *ctx, uint16_t address,
+                         const char *data, size_t len)
+{
+	return ds1963s_scratchpad_write_resume(ctx, address, data, len, 0);
+}
+
+int
+ds1963s_scratchpad_write_resume(struct ds1963s_client *ctx, uint16_t address,
+                                const char *data, size_t len, int resume)
+{
+	int portnum = ctx->copr.portnum;
+	uint8_t buf[64];
+	int i = 0;
+
+	/* Make sure the data we provide fits. */
+	if (len > 32)
+		return -1;
+
+	if (ctx->resume)
+		buf[i++] = ROM_CMD_RESUME;
+	else 
+		OWASSERT(SelectSHA(portnum), OWERROR_ACCESS_FAILED, -1);
+
+	/* write scratchpad command */
+	buf[i++] = CMD_WRITE_SCRATCHPAD;
+	/* TA1, which fully holds the offset. */
+	buf[i++] = address & 0xFF;
+	/* TA2, which is unused. */
+	buf[i++] = address >> 8;
+	/* payload */
+	memcpy(buf + i, data, len);
+
+	OWASSERT(owBlock(portnum, 0, buf, len + i), OWERROR_BLOCK_FAILED, -1);
+	owTouchReset(portnum);
+
+	return 0;
+}
+
+int ds1963s_client_memory_read(struct ds1963s_client *ctx, uint16_t address,
+                               uint8_t *data, size_t size)
+{
+	int portnum = ctx->copr.portnum;
+	uint8_t block[35];
 	int i;
 
-	memcpy(&M[ 0], &SS[ 0],  4);
-	memcpy(&M[ 4], &PP[ 0], 32);
-	memcpy(&M[36], &SP[ 8],  4);
-	M[40] = MPX;
-	memcpy(&M[41], &SP[13],  7);
-	memcpy(&M[48], &SS[ 4],  4);
-	memcpy(&M[52], &SP[20],  3);
-	M[55] = 0x80;
+	/* XXX: need to check max read size. */
+	if (size > sizeof(block) - 3)
+		return -1;
 
-	M[56] = 0;
-	M[57] = 0;
-	M[58] = 0;
-	M[59] = 0;
+	OWASSERT(SelectSHA(portnum), OWERROR_ACCESS_FAILED, -1);
 
-	M[60] = 0;
-	M[61] = 0;
-	M[62] = 1;
-	M[63] = 0xB8;
+	memset(block, 0xff, sizeof block);
+	/* write scratchpad command */
+	block[0] = CMD_READ_MEMORY;
+	/* TA1, which fully holds the offset. */
+	block[1] = address & 0xFF;
+	/* TA2, which is unused. */
+	block[2] = address >> 8;
 
-	for (i = 0; i < 64; i++)
-		printf("%.2x", M[i]);
-	printf("\n");
+	OWASSERT(owBlock(portnum, 0, block, size + 3), OWERROR_BLOCK_FAILED, -1);
+	owTouchReset(portnum);
+
+	memcpy(data, &block[3], size);
+	return 0;
 }
 
-/* Construct the SHA-1 output for all operation except:
- *
- * - Compute First Secret
- * - Compute Next Secret
- */
-static void __sha1_get_output_1(uint8_t SP[32], uint32_t A, uint32_t B,
-                                uint32_t C, uint32_t D, uint32_t E)
+int ds1963s_client_memory_write(struct ds1963s_client *ctx, uint16_t address,
+                                const uint8_t *data, size_t size)
 {
-	SP[ 8] = (E >>  0) & 0xFF;
-	SP[ 9] = (E >>  8) & 0xFF;
-	SP[10] = (E >> 16) & 0xFF;
-	SP[11] = (E >> 24) & 0xFF;
+	int portnum = ctx->copr.portnum;
+	uint8_t buffer[32];
+	uint8_t es = 0;
+	int addr_buff;
+	int ret;
 
-	SP[12] = (D >>  0) & 0xFF;
-	SP[13] = (D >>  8) & 0xFF;
-	SP[14] = (D >> 16) & 0xFF;
-	SP[15] = (D >> 24) & 0xFF;
+	/* XXX: set error. */
+	if (size > 32)
+		return -1;
 
-	SP[16] = (C >>  0) & 0xFF;
-	SP[17] = (C >>  8) & 0xFF;
-	SP[18] = (C >> 16) & 0xFF;
-	SP[19] = (C >> 24) & 0xFF;
+	/* Erase the scratchpad to clear the HIDE flag. */
+	OWASSERT(EraseScratchpadSHA18(portnum, address, FALSE),
+	         OWERROR_ERASE_SCRATCHPAD_FAILED, -1);
 
-	SP[20] = (B >>  0) & 0xFF;
-	SP[21] = (B >>  8) & 0xFF;
-	SP[22] = (B >> 16) & 0xFF;
-	SP[23] = (B >> 24) & 0xFF;
+	/* Write the provided data to the scratchpad. */
+	ret = ds1963s_scratchpad_write_resume(ctx, address, data, size, 1);
+	if (ret == -1)
+		return -1;
 
-	SP[24] = (A >>  0) & 0xFF;
-	SP[25] = (A >>  8) & 0xFF;
-	SP[26] = (A >> 16) & 0xFF;
-	SP[27] = (A >> 24) & 0xFF;
+	/* Read back the data from the scratchpad to verify TA/ES/data. */
+	OWASSERT(ReadScratchpadSHA18(portnum, &addr_buff, &es, buffer, TRUE),
+	         OWERROR_READ_SCRATCHPAD_FAILED, -1);
+
+	/* Verify that what we read is exactly what we wrote. */
+	OWASSERT(address == addr_buff, OWERROR_READ_SCRATCHPAD_FAILED, -1);
+	OWASSERT(es + 1 == size, OWERROR_READ_SCRATCHPAD_FAILED, -1);
+	OWASSERT(memcmp(buffer, data, size) == 0,
+	         OWERROR_READ_SCRATCHPAD_FAILED, -1);
+
+	/* We latched the data to scratchpad properly, copy to memory. */
+	OWASSERT(CopyScratchpadSHA18(portnum, address, size, TRUE),
+	         OWERROR_COPY_SCRATCHPAD_FAILED, -1);
+
+	return 0;
 }
 
-void ds1963s_sign_page(struct ds1963s *ds1963s)
+inline int __write_cycle_address(int write_cycle_type)
 {
-	uint8_t M[64];
-	SHA1_CTX ctx;
+	assert(write_cycle_type >= WRITE_CYCLE_DATA_8);
+	assert(write_cycle_type <= WRITE_CYCLE_SECRET_7);
+
+	return 0x260 + write_cycle_type * 4;
+}
+
+uint32_t ibutton_write_cycle_get(int portnum, int write_cycle_type)
+{
+	int address = __write_cycle_address(write_cycle_type);
+	uint8_t block[7];
+
+	OWASSERT(SelectSHA(portnum), OWERROR_ACCESS_FAILED, FALSE);
+
+	memset(block, 0xff, 7);
+	/* write scratchpad command */
+	block[0] = CMD_READ_MEMORY;
+	/* TA1, which fully holds the offset. */
+	block[1] = address & 0xFF;
+	/* TA2, which is unused. */
+	block[2] = address >> 8;
+
+	OWASSERT(owBlock(portnum, 0, block, 7), OWERROR_BLOCK_FAILED, FALSE);
+	owTouchReset(portnum);
+
+	return GET_32BIT_LSB(&block[3]);
+}
+
+int
+ds1963s_write_cycle_get_all(struct ds1963s_client *ctx, uint32_t counters[16])
+{
+	int address = __write_cycle_address(WRITE_CYCLE_DATA_8);
+	int portnum = ctx->copr.portnum;
+	uint8_t block[67];
 	int i;
 
-	/* XXX: set properly. */
-	ds1963s->M = 0;
+	OWASSERT(SelectSHA(portnum), OWERROR_ACCESS_FAILED, -1);
 
-	ds1963s->X = 0;
-	ds1963s->CHLG = 0;
-	ds1963s->AUTH = 0;
+	memset(block, 0xff, sizeof block);
+	/* write scratchpad command */
+	block[0] = CMD_READ_MEMORY;
+	/* TA1, which fully holds the offset. */
+	block[1] = address & 0xFF;
+	/* TA2, which is unused. */
+	block[2] = address >> 8;
 
-	__sha1_get_input_1(
-		M,
-		ds1963s->secret_memory,
-		ds1963s->data_memory,
-		__mpx_get(ds1963s->M, ds1963s->X, ds1963s->scratchpad),
-		ds1963s->scratchpad
-	);
+	OWASSERT(owBlock(portnum, 0, block, sizeof block), OWERROR_BLOCK_FAILED, -1);
+	owTouchReset(portnum);
 
-	/* We omit the finalize, as the DS1963S does not use it, but rather
-	 * uses the internal state A, B, C, D, E for the result.  This also
-	 * means we have to subtract the initial state from the context, as
-	 * it has added these to the results.
-	 */
-	SHA1_Init(&ctx);
-	SHA1_Update(&ctx, M, sizeof M);
+	for (i = 0; i < 16; i++)
+		counters[i] = GET_32BIT_LSB(&block[i * 4 + 3]);
 
-	/* Write the results to the scratchpad. */
-	__sha1_get_output_1(
-		ds1963s->scratchpad, 
-		ctx.state[0] - 0x67452301,
-		ctx.state[1] - 0xEFCDAB89,
-		ctx.state[2] - 0x98BADCFE,
-		ctx.state[3] - 0x10325476,
-		ctx.state[4] - 0xC3D2E1F0
-	);
+	return 0;
 }
 
-int main(void)
+uint32_t ds1963s_client_prng_get(struct ds1963s_client *ctx)
 {
-	struct ds1963s ds1963s;
+	int portnum = ctx->copr.portnum;
+	int address = 0x2A0;
+	uint8_t block[7];
 
-	memset(&ds1963s, 0, sizeof ds1963s);
-	memcpy(ds1963s.secret_memory, "\x7c\x06\x3d\x10\xb0\x87\x9c\x1c", 8);
+	OWASSERT(SelectSHA(portnum), OWERROR_ACCESS_FAILED, -1);
 
-	ds1963s_sign_page(&ds1963s);
+	memset(block, 0xff, sizeof block);
+	/* write scratchpad command */
+	block[0] = CMD_READ_MEMORY;
+	/* TA1, which fully holds the offset. */
+	block[1] = address & 0xFF;
+	/* TA2, which is unused. */
+	block[2] = address >> 8;
+
+	OWASSERT(owBlock(portnum, 0, block, sizeof block), OWERROR_BLOCK_FAILED, -1);
+	owTouchReset(portnum);
+
+	return GET_32BIT_LSB(&block[3]);
+}
+
+void ibutton_perror(const char *s)
+{
+	if (s)
+		fprintf(stderr, "%s: ", s);
+
+	fprintf(stderr, "%s\n", owGetErrorMsg(owGetErrorNum()));
+}
+
+static uint8_t ds1963s_crc8_table[] = {
+	0, 94,188,226, 97, 63,221,131,194,156,126, 32,163,253, 31, 65,
+      157,195, 33,127,252,162, 64, 30, 95,  1,227,189, 62, 96,130,220,
+       35,125,159,193, 66, 28,254,160,225,191, 93,  3,128,222, 60, 98,
+      190,224,  2, 92,223,129, 99, 61,124, 34,192,158, 29, 67,161,255,
+       70, 24,250,164, 39,121,155,197,132,218, 56,102,229,187, 89,  7,
+      219,133,103, 57,186,228,  6, 88, 25, 71,165,251,120, 38,196,154,
+      101, 59,217,135,  4, 90,184,230,167,249, 27, 69,198,152,122, 36,
+      248,166, 68, 26,153,199, 37,123, 58,100,134,216, 91,  5,231,185,
+      140,210, 48,110,237,179, 81, 15, 78, 16,242,172, 47,113,147,205,
+       17, 79,173,243,112, 46,204,146,211,141,111, 49,178,236, 14, 80,
+      175,241, 19, 77,206,144,114, 44,109, 51,209,143, 12, 82,176,238,
+       50,108,142,208, 83, 13,239,177,240,174, 76, 18,145,207, 45,115,
+      202,148,118, 40,171,245, 23, 73,  8, 86,180,234,105, 55,213,139,
+       87,  9,235,181, 54,104,138,212,149,203, 41,119,244,170, 72, 22,
+      233,183, 85, 11,136,214, 52,106, 43,117,151,201, 74, 20,246,168,
+      116, 42,200,150, 21, 75,169,247,182,232, 10, 84,215,137,107, 53
+};
+
+uint8_t ds1963s_crc8(const uint8_t *buf, size_t count)
+{
+	uint8_t crc = 0;
+	size_t i;
+
+	for (i = 0; i < count; i++)
+		crc = ds1963s_crc8_table[crc ^ buf[i]];
+
+	return crc;
 }

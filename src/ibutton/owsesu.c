@@ -82,7 +82,7 @@ SMALLINT owAcquire(int portnum, char *port_zstr)
 //
 // exportable functions defined in ownetu.c
 //
-int owAcquireEx(char *port_zstr)
+int owAcquireEx(const char *port_zstr)
 {
    int portnum;
 

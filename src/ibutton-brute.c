@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <sys/ioctl.h>
-#include "ibutton.h"
+#include "ds1963s.h"
 #include "ibutton/ownet.h"
 #include "ibutton/shaib.h"
 
@@ -20,27 +20,24 @@ extern int fd[MAX_PORTNUM];
 
 struct brutus
 {
-	SHACopr		copr;
-	uint8_t		target_hmac[32];
-	uint8_t		secret[8];
-	uint8_t		secret_idx;
+	struct ds1963s_client	ctx;
+	uint8_t			target_hmac[32];
+	uint8_t			secret[8];
+	uint8_t			secret_idx;
 };
 
 int brutus_init(struct brutus *brute)
 {
-	SHACopr *copr = &brute->copr;
+	SHACopr *copr = &brute->ctx.copr;
 	uint8_t buf[32];
+	int i;
 
 	/* Initialize the hmac we'll brute force. */
 	brute->secret_idx = 0;
 	memset(brute->secret, 0, sizeof brute->secret);
 
-	/* Get port. */
-        if ( (copr->portnum = owAcquireEx(SERIAL_PORT)) == -1)
-		return -1;
-
-	/* Find DS1963S iButton. */
-	if (FindNewSHA(copr->portnum, copr->devAN, TRUE) == FALSE)
+	/* Initialize the DS1963S client. */
+	if (ds1963s_client_init(&brute->ctx, SERIAL_PORT) == -1)
 		return -1;
 
 	/* Zero memory data page #0 and the scratchpad. */
@@ -53,9 +50,17 @@ int brutus_init(struct brutus *brute)
         ReadScratchpadSHA18(copr->portnum, 0, 0, brute->target_hmac, 0);
 }
 
+void brutus_perror(const char *s)
+{
+	if (s)
+		fprintf(stderr, "%s: ", s);
+
+	fprintf(stderr, "%s\n", owGetErrorMsg(owGetErrorNum()));
+}
+
 void brutus_destroy(struct brutus *brute)
 {
-	owRelease(brute->copr.portnum);
+	ds1963s_client_destroy(&brute->ctx);
 }
 
 /* Pulling down the RTS and DTR lines on the serial port for a certain
@@ -89,8 +94,9 @@ void ibutton_hide_set(SHACopr *copr)
 	}
 }
 
-void ibutton_secret_write_partial(SHACopr *copr, int secret, uint8_t *data, size_t len)
+void ds1963s_secret_write_partial(struct ds1963s_client *ctx, int secret, uint8_t *data, size_t len)
 {
+	SHACopr *copr = &ctx->copr;
 	int secret_addr;
 	char buf[32];
 	int i;
@@ -112,7 +118,7 @@ void ibutton_secret_write_partial(SHACopr *copr, int secret, uint8_t *data, size
 		exit(EXIT_FAILURE);
 	}
 
-	if (ibutton_scratchpad_write(copr->portnum, 0, data, len) == -1) {
+	if (ds1963s_scratchpad_write(ctx, 0, data, len) == -1) {
 		fprintf(stderr, "Error writing scratchpad.\n");
 		exit(EXIT_FAILURE);
 	}
@@ -124,7 +130,7 @@ void ibutton_secret_write_partial(SHACopr *copr, int secret, uint8_t *data, size
 		exit(EXIT_FAILURE);
 	}
 
-	if (ibutton_scratchpad_write(copr->portnum, secret_addr, data, len) == -1) {
+	if (ds1963s_scratchpad_write(ctx, secret_addr, data, len) == -1) {
 		fprintf(stderr, "Error writing scratchpad.\n");
 		exit(EXIT_FAILURE);
 	}
@@ -150,12 +156,12 @@ void ibutton_secret_write_partial(SHACopr *copr, int secret, uint8_t *data, size
 
 int brutus_do_one(struct brutus *brute)
 {
-	SHACopr *copr = &brute->copr;
+	SHACopr *copr = &brute->ctx.copr;
 	uint8_t buf[32];
 	int i;
 
-	ibutton_secret_write_partial(
-		&brute->copr,		/* SHA coprocessor context */
+	ds1963s_secret_write_partial(
+		&brute->ctx,		/* DS1963S context */
 		0,			/* Secret number */
 		brute->secret,		/* Partial secret to write */
 		brute->secret_idx + 1	/* Length of the partial secret */
@@ -192,7 +198,7 @@ int main(int argc, char **argv)
 	int i, ret;
 
 	if (brutus_init(&brute) == -1) {
-		fprintf(stderr, "Init failed\n");
+		brutus_perror("brutus_init()");
 		exit(EXIT_FAILURE);
 	}
 

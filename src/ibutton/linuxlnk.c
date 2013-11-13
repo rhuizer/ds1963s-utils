@@ -114,7 +114,7 @@ struct termios origterm;
 //
 // Returns: the port number if it was succesful otherwise -1
 //
-int OpenCOMEx(char *port_zstr)
+int OpenCOMEx(const char *port_zstr)
 {
    int i;
    int portnum;
@@ -157,7 +157,7 @@ int OpenCOMEx(char *port_zstr)
 // Returns: TRUE(1)  - success, COM port opened
 //          FALSE(0) - failure, could not open specified port
 //
-SMALLINT OpenCOM(int portnum, char *port_zstr)
+SMALLINT OpenCOM(int portnum, const char *port_zstr)
 {
    struct termios t;               // see man termios - declared as above
    int rc;

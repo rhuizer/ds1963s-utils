@@ -377,7 +377,7 @@ SMALLINT  owOverdriveAccess(int portnum);
 
 // external One Wire functions defined in owsesu.c
  SMALLINT owAcquire(int portnum, char *port_zstr);
- int      owAcquireEx(char *port_zstr);
+ int      owAcquireEx(const char *port_zstr);
  void     owRelease(int portnum);
 
 // external One Wire functions defined in findtype.c

@@ -187,7 +187,7 @@ SMALLINT ReadScratchpadSHA18(int portnum, int* address, uchar* es,
 //         FALSE - error writing scratch, device not present, or HIDE
 //                 flag is in incorrect state for address being written.
 //
-SMALLINT WriteScratchpadSHA18(int portnum, int address, uchar *data,
+SMALLINT WriteScratchpadSHA18(int portnum, int address, const uchar *data,
                               SMALLINT data_len, SMALLINT resume)
 {
    uchar send_block[50];
