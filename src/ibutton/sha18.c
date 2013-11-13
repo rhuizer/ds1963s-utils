@@ -120,6 +120,7 @@ SMALLINT ReadScratchpadSHA18(int portnum, int* address, uchar* es,
    uchar send_block[40];
    SMALLINT i;
    ushort lastcrc16;
+   int bytes_read;
 
    if(!resume)
    {
@@ -137,7 +138,7 @@ SMALLINT ReadScratchpadSHA18(int portnum, int* address, uchar* es,
    send_block[send_cnt++] = CMD_READ_SCRATCHPAD;
 
    // now add the read bytes for data bytes and crc16
-   memset(&send_block[send_cnt], 0xFF, 37);
+   memset(&send_block[send_cnt], 0xff, 37);
    send_cnt += 37;
 
    // now send the block
@@ -150,9 +151,12 @@ SMALLINT ReadScratchpadSHA18(int portnum, int* address, uchar* es,
    #endif
    //\\//\\//\\//\\//\\//\\//\\//\\//\\//
 
+   bytes_read = (send_block[2+resume] << 8) | send_block[1+resume];
+   bytes_read = 32 - (bytes_read & 0x1F);
+
    // calculate CRC16 of result
    setcrc16(portnum,0);
-   for (i = resume; i < send_cnt ; i++)
+   for (i = resume; i < bytes_read + resume + 6; i++)
       lastcrc16 = docrc16(portnum,send_block[i]);
 
    // verify CRC16 is correct

@@ -61,6 +61,44 @@ int ds1963s_client_rom_get(struct ds1963s_client *ctx, struct ds1963s_rom *rom)
 	return 0;
 }
 
+int ds1963s_client_taes_print(struct ds1963s_client *ctx)
+{
+	uint16_t addr;
+	uint8_t es;
+
+
+	if (ds1963s_client_taes_get(ctx, &addr, &es) == -1) {
+		ibutton_perror("kak");
+		return -1;
+	}
+
+	printf("TA1: 0x%.2x TA2: 0x%.2x E/S: 0x%.2x\n",
+		addr >> 8, addr & 0xff, es);
+}
+
+int
+ds1963s_client_taes_get(struct ds1963s_client *ctx, uint16_t *addr, uint8_t *es)
+{
+	int portnum = ctx->copr.portnum;
+	uint8_t buf[32];
+	uint8_t __es;
+	int __addr;
+
+//        OWASSERT(EraseScratchpadSHA18(portnum, 0, FALSE),
+//                 OWERROR_ERASE_SCRATCHPAD_FAILED, -1);
+
+        OWASSERT(ReadScratchpadSHA18(portnum, &__addr, &__es, buf, 0),
+                 OWERROR_READ_SCRATCHPAD_FAILED, -1);
+
+	if (addr)
+		*addr = __addr;
+
+	if (es)
+		*es = __es;
+
+	return 0;
+}
+
 int ds1963s_client_serial_get(struct ds1963s_client *ctx, uint8_t serial[6])
 {
 	struct ds1963s_rom rom;
@@ -184,7 +222,9 @@ int ds1963s_client_memory_write(struct ds1963s_client *ctx, uint16_t address,
 	OWASSERT(EraseScratchpadSHA18(portnum, address, FALSE),
 	         OWERROR_ERASE_SCRATCHPAD_FAILED, -1);
 
-	/* Write the provided data to the scratchpad. */
+	/* Write the provided data to the scratchpad.  This will also latch in
+ 	 * TA1 and TA2, which are validated by the copy scratchpad command.
+ 	 */
 	ret = ds1963s_scratchpad_write_resume(ctx, address, data, size, 1);
 	if (ret == -1)
 		return -1;

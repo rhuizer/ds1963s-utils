@@ -51,6 +51,8 @@ int ds1963s_scratchpad_write_resume(struct ds1963s_client *ctx,
                                     size_t len, int resume);
 int ds1963s_client_rom_get(struct ds1963s_client *ctx, struct ds1963s_rom *rom);
 int ds1963s_client_serial_get(struct ds1963s_client *ctx, uint8_t buf[6]);
+int ds1963s_client_taes_get(struct ds1963s_client *ctx, uint16_t *addr, uint8_t *es);
+int ds1963s_client_taes_print(struct ds1963s_client *ctx);
 
 int ds1963s_client_memory_read(struct ds1963s_client *ctx, uint16_t address,
                                uint8_t *data, size_t size);
