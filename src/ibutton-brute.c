@@ -42,7 +42,7 @@ int brutus_init(struct brutus *brute)
 
 	/* Zero memory data page #0 and the scratchpad. */
 	memset(buf, 0, sizeof buf);
-	WriteDataPageSHA18(copr->portnum, 0, buf, 0);
+        EraseScratchpadSHA18(copr->portnum, 0, 0);
 	WriteScratchpadSHA18(copr->portnum, 0, buf, 32, 0);
 
 	/* Calculate SHA1 MAC over zeroed data. */
@@ -169,7 +169,7 @@ int brutus_do_one(struct brutus *brute)
 
 	/* Zero memory data page #0 and the scratchpad. */
 	memset(buf, 0, sizeof buf);
-	WriteDataPageSHA18(copr->portnum, 0, buf, 0);
+        EraseScratchpadSHA18(copr->portnum, 0, 0);
 	WriteScratchpadSHA18(copr->portnum, 0, buf, 32, 0);
 
 	/* Calculate SHA1 MAC over zeroed data. */
