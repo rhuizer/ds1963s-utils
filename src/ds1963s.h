@@ -27,8 +27,9 @@
 
 struct ds1963s_client
 {
-	SHACopr copr;
-	int	resume;
+	const char	*device_path;
+	SHACopr		copr;
+	int		resume;
 };
 
 struct ds1963s_read_auth_page_reply
@@ -86,6 +87,8 @@ uint32_t ds1963s_client_prng_get(struct ds1963s_client *ctx);
 void ibutton_perror(const char *s);
 uint32_t ibutton_write_cycle_get(int portnum, int write_cycle_type);
 int ds1963s_write_cycle_get_all(struct ds1963s_client*, uint32_t [16]);
+int ds1963s_client_hide_set(struct ds1963s_client *ctx);
+
 
 uint8_t ds1963s_crc8(const uint8_t *buf, size_t count);
 uint16_t ds1963s_crc16(const uint8_t *buf, size_t count);

@@ -1,11 +1,14 @@
 #include <assert.h>
 #include <stdint.h>
+#include <sys/ioctl.h>
 #include "getput.h"
 #include "ds1963s.h"
 #include "ibutton/ownet.h"
 #include "ibutton/shaib.h"
 
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
+
+extern int fd[MAX_PORTNUM];
 
 int ds1963s_client_init(struct ds1963s_client *ctx, const char *device)
 {
@@ -19,8 +22,8 @@ int ds1963s_client_init(struct ds1963s_client *ctx, const char *device)
 	if (FindNewSHA(copr->portnum, copr->devAN, TRUE) == FALSE)
 		return -1;
 
-	/* Default the resume flag to FALSE. */
 	ctx->resume = 0;
+	ctx->device_path = device;
 }
 
 void ds1963s_client_destroy(struct ds1963s_client *ctx)
@@ -437,6 +440,34 @@ uint32_t ds1963s_client_prng_get(struct ds1963s_client *ctx)
 	owTouchReset(portnum);
 
 	return GET_32BIT_LSB(&block[3]);
+}
+
+/* Pulling down the RTS and DTR lines on the serial port for a certain
+ * amount of time power-on-resets the iButton.
+ */
+int ds1963s_client_hide_set(struct ds1963s_client *ctx)
+{
+	int status = 0;
+
+	if (ioctl(fd[ctx->copr.portnum], TIOCMSET, &status) == -1)
+		return -1;
+
+	/* XXX: unclear how long we should sleep for a power-on-reset. */
+	sleep(1);
+
+	/* Release and reacquire the port. */
+	owRelease(ctx->copr.portnum);
+
+        if ( (ctx->copr.portnum = owAcquireEx(ctx->device_path)) == -1)
+		return -1;
+
+	/* Find the DS1963S iButton again, as we've lost it after a
+	 * return to probe condition.
+	 */
+	if (FindNewSHA(ctx->copr.portnum, ctx->copr.devAN, TRUE) == FALSE)
+		return -1;
+
+	return 0;
 }
 
 void ibutton_perror(const char *s)
