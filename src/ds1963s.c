@@ -5,6 +5,8 @@
 #include "ibutton/ownet.h"
 #include "ibutton/shaib.h"
 
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
+
 int ds1963s_client_init(struct ds1963s_client *ctx, const char *device)
 {
 	SHACopr *copr = &ctx->copr;
@@ -71,6 +73,17 @@ int ds1963s_client_taes_print(struct ds1963s_client *ctx)
 
 	printf("TA2: 0x%.2x TA1: 0x%.2x E/S: 0x%.2x\n",
 		addr >> 8, addr & 0xff, es);
+
+	return 0;
+}
+
+void ds1963s_client_hash_print(uint8_t hash[20])
+{
+	int i;
+
+	for (i = 0; i < 20; i++)
+		printf("%.2x", hash[i]);
+	printf("\n");
 }
 
 int
@@ -133,6 +146,72 @@ ds1963s_scratchpad_read_resume(struct ds1963s_client *ctx, uint8_t *dst,
 
 	/* Return the number of bytes read. */
 	return bytes_read;
+}
+
+int ds1963s_client_read_auth(struct ds1963s_client *ctx, int address,
+	struct ds1963s_read_auth_page_reply *reply, int resume)
+{
+	int portnum = ctx->copr.portnum;
+	uint8_t scratchpad[32];
+	uint8_t buf[56];
+	uint16_t crc;
+	int num_verf;
+	int i = 0;
+
+	/* Bump resume to the range [0, 1] */
+	resume = !!resume;
+
+	if (resume)
+		buf[i++] = ROM_CMD_RESUME;
+	else
+		OWASSERT(SelectSHA(portnum), OWERROR_ACCESS_FAILED, -1);
+
+	/* XXX: study how overdrive works. */
+	num_verf = (in_overdrive[portnum&0x0FF]) ? 10 : 2;
+
+	buf[i++] = CMD_READ_AUTH_PAGE;
+	buf[i++] = address & 0xFF;
+	buf[i++] = address >> 8;
+
+	/* Padding for transmission of TA1, TA2, CRC16, data and
+	 * verification.
+	 */
+	memset(&buf[i], 0xFF, 42 + num_verf);
+	i += 42 + num_verf;
+
+	/* Send the block. */
+	OWASSERT(owBlock(portnum, resume, buf, i),
+	         OWERROR_BLOCK_FAILED, -1);
+
+	/* Calculate the CRC over the received data, and verify it. */
+	crc = ds1963s_crc16(buf + resume, 45);
+	OWASSERT(crc == 0xB001, OWERROR_CRC_FAILED, -1);
+
+	/* The DS1963S sends 1 bits during SHA1 computation and signals
+	 * that the SHA1 computation finished by sending an alternating pattern
+	 * of 0 and 1 bits.  We detect this pattern here.
+	 *
+	 * XXX: The specification states we should read at least 8 bits of
+	 * this pattern.  Does this happen?
+	 *
+	 * XXX: Do we have a guarantee that this pattern is received within
+	 * the buffer size we use?
+	 */
+	OWASSERT( ((buf[i - 1] & 0xF0) == 0x50) ||
+             ((buf[i - 1] & 0xF0) == 0xA0),
+             OWERROR_NO_COMPLETION_BYTE, -1);
+
+	/* Read the SHA1 result from the scratchpad. */
+	OWASSERT(ReadScratchpadSHA18(portnum, 0, 0, scratchpad, TRUE),
+	         OWERROR_READ_SCRATCHPAD_FAILED, -1);
+
+	memcpy(reply->data, &buf[i - 42 - num_verf], 32);
+	memcpy(reply->signature, &scratchpad[8], 20);
+	reply->data_wc   = GET_32BIT_LSB(&buf[i - 10 - num_verf]);
+	reply->secret_wc = GET_32BIT_LSB(&buf[i - 6 - num_verf]);
+	reply->crc16     = GET_16BIT_MSB(&buf[43 + resume]);
+
+	return 0;
 }
 
 int ds1963s_client_serial_get(struct ds1963s_client *ctx, uint8_t serial[6])
@@ -403,20 +482,20 @@ static uint8_t oddparity[16] = { 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0 
 uint16_t ds1963s_crc16(const uint8_t *buf, size_t count)
 {
 	uint16_t crc = 0;
-	uint8_t byte;
+	uint16_t word;
 	size_t i;
 
 	for (i = 0; i < count; i++) {
-		byte = byte ^ crc;
+		word = (crc ^ buf[i]) & 0xFF;
 		crc >>= 8;
 
-		if (oddparity[byte & 0xf] ^ oddparity[byte >> 4])
+		if (oddparity[word & 0xf] ^ oddparity[word >> 4])
 			crc ^= 0xc001;
 
-		byte <<= 6;
-		crc ^= byte;
-		byte <<= 1;
-		crc ^= byte;
+		word <<= 6;
+		crc ^= word;
+		word <<= 1;
+		crc ^= word;
 	}
 
 	return crc;

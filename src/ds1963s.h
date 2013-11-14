@@ -31,6 +31,16 @@ struct ds1963s_client
 	int	resume;
 };
 
+struct ds1963s_read_auth_page_reply
+{
+	uint8_t		data[32];
+	uint8_t		signature[20];
+	size_t		data_size;
+	uint32_t	data_wc;
+	uint32_t	secret_wc;
+	uint16_t	crc16;
+};
+
 struct ds1963s_rom
 {
 	uint8_t		family;
@@ -54,13 +64,18 @@ int ds1963s_scratchpad_write_resume(struct ds1963s_client *ctx,
                                     uint16_t address, const char *data,
                                     size_t len, int resume);
 ssize_t ds1963s_scratchpad_read_resume(struct ds1963s_client *ctx,
-                                       uint8_t *dst, size_t size, int resume);
+                                       uint8_t *dst, size_t size,
+                                       uint16_t *addr, uint8_t *es,
+                                       int resume);
 
+int ds1963s_client_read_auth(struct ds1963s_client *ctx, int address,
+        struct ds1963s_read_auth_page_reply *reply, int resume);
 
 int ds1963s_client_rom_get(struct ds1963s_client *ctx, struct ds1963s_rom *rom);
 int ds1963s_client_serial_get(struct ds1963s_client *ctx, uint8_t buf[6]);
 int ds1963s_client_taes_get(struct ds1963s_client *ctx, uint16_t *addr, uint8_t *es);
 int ds1963s_client_taes_print(struct ds1963s_client *ctx);
+void ds1963s_client_hash_print(uint8_t hash[20]);
 
 int ds1963s_client_memory_read(struct ds1963s_client *ctx, uint16_t address,
                                uint8_t *data, size_t size);
