@@ -21,13 +21,14 @@ extern int fd[MAX_PORTNUM];
 struct brutus
 {
 	struct ds1963s_client	ctx;
-	uint8_t			target_hmac[32];
+	uint8_t			target_hmac[20];
 	uint8_t			secret[8];
 	uint8_t			secret_idx;
 };
 
 int brutus_init(struct brutus *brute)
 {
+        struct ds1963s_read_auth_page_reply reply;
 	SHACopr *copr = &brute->ctx.copr;
 	uint8_t buf[32];
 	int i;
@@ -46,8 +47,12 @@ int brutus_init(struct brutus *brute)
 	WriteScratchpadSHA18(copr->portnum, 0, buf, 32, 0);
 
 	/* Calculate SHA1 MAC over zeroed data. */
-        SHAFunction18(copr->portnum, 0xC3, 0, 0);
-        ReadScratchpadSHA18(copr->portnum, 0, 0, brute->target_hmac, 0);
+	if (ds1963s_client_read_auth(&brute->ctx, 0, &reply, 0) == -1) {
+		ibutton_perror("ds1963s_client_read_auth()");
+		exit(EXIT_FAILURE);
+	}
+
+	memcpy(brute->target_hmac, reply.signature, 20);
 }
 
 void brutus_perror(const char *s)
@@ -156,6 +161,7 @@ void ds1963s_secret_write_partial(struct ds1963s_client *ctx, int secret, uint8_
 
 int brutus_do_one(struct brutus *brute)
 {
+        struct ds1963s_read_auth_page_reply reply;
 	SHACopr *copr = &brute->ctx.copr;
 	uint8_t buf[32];
 	int i;
@@ -173,11 +179,13 @@ int brutus_do_one(struct brutus *brute)
 	WriteScratchpadSHA18(copr->portnum, 0, buf, 32, 0);
 
 	/* Calculate SHA1 MAC over zeroed data. */
-        SHAFunction18(copr->portnum, 0xC3, 0, 0);
-        ReadScratchpadSHA18(copr->portnum, 0, 0, buf, 0);
+	if (ds1963s_client_read_auth(&brute->ctx, 0, &reply, 0) == -1) {
+		ibutton_perror("ds1963s_client_read_auth()");
+		exit(EXIT_FAILURE);
+	}
 
 	/* Compare the current hmac with the target one. */
-	if (!memcmp(brute->target_hmac, buf, sizeof buf)) {
+	if (!memcmp(brute->target_hmac, reply.signature, 20)) {
 		/* We're done. */
 		if (brute->secret_idx++ == sizeof(brute->secret) - 1)
 			return 0;
