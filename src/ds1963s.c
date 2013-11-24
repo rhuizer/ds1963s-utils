@@ -24,6 +24,8 @@ int ds1963s_client_init(struct ds1963s_client *ctx, const char *device)
 
 	ctx->resume = 0;
 	ctx->device_path = device;
+
+	return 0;
 }
 
 void ds1963s_client_destroy(struct ds1963s_client *ctx)

