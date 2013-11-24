@@ -169,3 +169,20 @@ SHA1_Final(unsigned char digest[20], SHA1_CTX *context)
 #endif
 }
 
+#if 0
+int main(void)
+{
+	char buf[64];
+	SHA1_CTX ctx;
+	int i;
+
+	for (i = 0; i < 0xFFFFFFFF; i++) {
+		SHA1_Init(&ctx);
+		SHA1_Update(&ctx, buf, 64);
+
+		if (i % 0x10000 == 0)
+			printf("%.8x\n", i);
+	}
+}
+
+#endif

@@ -20,6 +20,7 @@
 #define MODE_READ		1
 #define MODE_READ_AUTH		2
 #define MODE_WRITE		4
+#define MODE_SIGN		8
 
 void ds1963s_tool_fatal(struct ds1963s_client *ctx)
 {
@@ -158,6 +159,29 @@ ds1963s_tool_read_auth(struct ds1963s_client *ctx, int page, size_t size)
 	ds1963s_client_hash_print(reply.signature);
 }
 
+void
+ds1963s_tool_sign(struct ds1963s_client *ctx, int page, size_t size)
+{
+	int addr = ds1963s_client_page_to_address(page);
+	int portnum = ctx->copr.portnum;
+
+        /* Erase the scratchpad to clear the HIDE flag. */
+        if (EraseScratchpadSHA18(portnum, 0, FALSE) == FALSE) {
+		fprintf(stderr, "EraseScratchpadSHA18 failed\n");
+		exit(EXIT_FAILURE);
+	}
+
+	if (ds1963s_client_sign_data(ctx, addr) == -1) {
+		ibutton_perror("ds1963s_client_sign_data()");
+		exit(EXIT_FAILURE);
+	}
+
+	printf("Sign data page #%.2d\n", page);
+	printf("---------------------------\n");
+	printf("SHA1 hash                 : ");
+//	ds1963s_client_hash_print(reply.signature);
+}
+
 void usage(const char *progname)
 {
 	fprintf(stderr, "Use as: %s\n",
@@ -172,11 +196,12 @@ static const struct option options[] =
 	{ "info",		0,	NULL,	'i' },
 	{ "read",		1,	NULL,	'r' },
 	{ "read-auth",		1,	NULL,	't' },
+	{ "sign-data",		1,	NULL,	'd' },
 	{ "write",		1,	NULL,	'w' },
 	{ NULL,			0,	NULL,	0   }
 };
 
-const char optstr[] = "a:d:r:p:iw:";
+const char optstr[] = "a:d:r:p:s:iw:";
 
 int main(int argc, char **argv)
 {
@@ -204,6 +229,9 @@ int main(int argc, char **argv)
 		case 'p':
 			page = atoi(optarg);
 			address = ds1963s_client_page_to_address(page);
+			break;
+		case 's':
+			mode = MODE_SIGN;
 			break;
 		case 'i':
 			mode = MODE_INFO;
@@ -246,6 +274,9 @@ int main(int argc, char **argv)
 		break;
 	case MODE_READ_AUTH:
 		ds1963s_tool_read_auth(&ctx, page, size);
+		break;
+	case MODE_SIGN:
+		ds1963s_tool_sign(&ctx, page, size);
 		break;
 	case MODE_WRITE:
 		ds1963s_tool_write(&ctx, address, data);

@@ -72,6 +72,8 @@ ssize_t ds1963s_scratchpad_read_resume(struct ds1963s_client *ctx,
 int ds1963s_client_read_auth(struct ds1963s_client *ctx, int address,
         struct ds1963s_read_auth_page_reply *reply, int resume);
 
+int ds1963s_client_sign_data(struct ds1963s_client *ctx, int address);
+
 int ds1963s_client_rom_get(struct ds1963s_client *ctx, struct ds1963s_rom *rom);
 int ds1963s_client_serial_get(struct ds1963s_client *ctx, uint8_t buf[6]);
 int ds1963s_client_taes_get(struct ds1963s_client *ctx, uint16_t *addr, uint8_t *es);

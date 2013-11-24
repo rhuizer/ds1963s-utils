@@ -219,6 +219,28 @@ int ds1963s_client_read_auth(struct ds1963s_client *ctx, int address,
 	return 0;
 }
 
+int ds1963s_client_sign_data(struct ds1963s_client *ctx, int address)
+{
+	int portnum = ctx->copr.portnum;
+	uint8_t scratchpad[32];
+	int i;
+
+	ReadScratchpadSHA18(portnum, 0, 0, scratchpad, 0);
+
+	for (i = 0; i < 32; i++)
+		printf("%.2x", scratchpad[i]);
+	printf("\n");
+
+	SHAFunction18(portnum, 0xC3, 0, 0);
+	ReadScratchpadSHA18(portnum, 0, 0, scratchpad, 0);
+
+	for (i = 0; i < 32; i++)
+		printf("%.2x", scratchpad[i]);
+	printf("\n");
+
+	return 0;
+}
+
 int ds1963s_client_serial_get(struct ds1963s_client *ctx, uint8_t serial[6])
 {
 	struct ds1963s_rom rom;
