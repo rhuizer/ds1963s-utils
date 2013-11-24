@@ -1,40 +1,40 @@
-//---------------------------------------------------------------------------
-// Copyright (C) 2000 Dallas Semiconductor Corporation, All Rights Reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom the
-// Software is furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY,  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-// IN NO EVENT SHALL DALLAS SEMICONDUCTOR BE LIABLE FOR ANY CLAIM, DAMAGES
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-// OTHER DEALINGS IN THE SOFTWARE.
-//
-// Except as contained in this notice, the name of Dallas Semiconductor
-// shall not be used except as stated in the Dallas Semiconductor
-// Branding Policy.
-//---------------------------------------------------------------------------
-//
-// ownet.h - Include file for 1-Wire Net library
-//
-// Version: 2.10
-//
-// History: 1.02 -> 1.03 Make sure uchar is not defined twice.
-//          1.03 -> 2.00 Changed 'MLan' to 'ow'.
-//          2.00 -> 2.01 Added error handling. Added circular-include check.
-//          2.01 -> 2.10 Added raw memory error handling and SMALLINT
-//          2.10 -> 3.00 Added memory bank functionality
-//                       Added file I/O operations
-//
+/*---------------------------------------------------------------------------
+ * Copyright (C) 2000 Dallas Semiconductor Corporation, All Rights Reserved.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY,  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL DALLAS SEMICONDUCTOR BE LIABLE FOR ANY CLAIM, DAMAGES
+ * OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ * OTHER DEALINGS IN THE SOFTWARE.
+ *
+ * Except as contained in this notice, the name of Dallas Semiconductor
+ * shall not be used except as stated in the Dallas Semiconductor
+ * Branding Policy.
+ *---------------------------------------------------------------------------
+ *
+ * ownet.h - Include file for 1-Wire Net library
+ *
+ * Version: 2.10
+ *
+ * History: 1.02 -> 1.03 Make sure uchar is not defined twice.
+ *          1.03 -> 2.00 Changed 'MLan' to 'ow'.
+ *          2.00 -> 2.01 Added error handling. Added circular-include check.
+ *          2.01 -> 2.10 Added raw memory error handling and SMALLINT
+ *          2.10 -> 3.00 Added memory bank functionality
+ *                       Added file I/O operations
+ */
 
 #ifndef OWNET_H
 #define OWNET_H
@@ -43,30 +43,33 @@
  * get rid of the warnings. Until then, there's #pragma warning. */
 
 #ifdef _MSC_VER
-#pragma warning (disable : 4100) // unreferenced formal parameter
-#pragma warning (disable : 4244) // conversion from blah to blah, possible loss of data
-#pragma warning (disable : 4701) // local variable may be used without having been initialized
+#pragma warning (disable : 4100) /* unreferenced formal parameter */
+#pragma warning (disable : 4244) /* conversion from blah to blah, possible loss of data */
+#pragma warning (disable : 4701) /* local variable may be used without having been initialized */
 #endif
 
-//--------------------------------------------------------------//
-// Common Includes to ownet applications
-//--------------------------------------------------------------//
+/*-------------------------------------------------------------*
+ * Common Includes to ownet applications                       *
+ *-------------------------------------------------------------*/
 #include <stdlib.h>
 
-// Workaround for Windows compilation.
-// The below doesn't actually work. :/
+/* Workaround for Windows compilation.
+ * The below doesn't actually work. :/
+ */
 typedef unsigned short ushort;
 typedef unsigned long ulong;
 
-//--------------------------------------------------------------//
-// Target Specific Information
-//--------------------------------------------------------------//
-//--------------------------------------------------------------//
-// Handhelds (PalmOS, WinCE)
-//--------------------------------------------------------------//
+/*-------------------------------------------------------------*
+ * Target Specific Information                                 *
+ *-------------------------------------------------------------*/
+
+/*-------------------------------------------------------------*
+ * Handhelds (PalmOS, WinCE)                                   *
+ *-------------------------------------------------------------*/
 #ifdef __MC68K__
-   //MC68K is the type of processor in the PILOT
-   //Metrowerk's CodeWarrior defines this symbol
+   /* MC68K is the type of processor in the PILOT
+    * Metrowerk's CodeWarrior defines this symbol
+    */
    #include <string.h>
    #ifndef strcmp
       #include <StringMgr.h>
@@ -76,9 +79,10 @@ typedef unsigned long ulong;
 #endif
 
 #ifdef _WIN32_WCE
-   //All of our projects had this flag defined by default (_WIN32_WCE),
-   //but I'm not 100% positive that this is _the_ definitive
-   //flag to use to identify a WinCE system.
+   /* All of our projects had this flag defined by default (_WIN32_WCE),
+    * but I'm not 100% positive that this is _the_ definitive
+    * flag to use to identify a WinCE system.
+    */
    #include "WinCElnk.h"
    #ifndef FILE
       #define FILE int
@@ -114,39 +118,38 @@ typedef unsigned long ulong;
 #endif
 
 
-//--------------------------------------------------------------//
-// Typedefs
-//--------------------------------------------------------------//
+/*--------------------------------------------------------------*
+ * Typedefs                                                     *
+ *--------------------------------------------------------------*/
 #ifndef SMALLINT
-   //
-   // purpose of smallint is for compile-time changing of formal
-   // parameters and return values of functions.  For each target
-   // machine, an integer is alleged to represent the most "simple"
-   // number representable by that architecture.  This should, in
-   // most cases, produce optimal code for that particular arch.
-   // BUT...  The majority of compilers designed for embedded
-   // processors actually keep an int at 16 bits, although the
-   // architecture might only be comfortable with 8 bits.
-   // The default size of smallint will be the same as that of
-   // an integer, but this allows for easy overriding of that size.
-   //
-   // NOTE:
-   // In all cases where a smallint is used, it is assumed that
-   // decreasing the size of this integer to something as low as
-   // a single byte _will_not_ change the functionality of the
-   // application.  e.g. a loop counter that will iterate through
-   // several kilobytes of data should not be SMALLINT.  The most
-   // common place you'll see smallint is for boolean return types.
-   //
+   /* purpose of smallint is for compile-time changing of formal
+    * parameters and return values of functions.  For each target
+    * machine, an integer is alleged to represent the most "simple"
+    * number representable by that architecture.  This should, in
+    * most cases, produce optimal code for that particular arch.
+    * BUT...  The majority of compilers designed for embedded
+    * processors actually keep an int at 16 bits, although the
+    * architecture might only be comfortable with 8 bits.
+    * The default size of smallint will be the same as that of
+    * an integer, but this allows for easy overriding of that size.
+    *
+    * NOTE:
+    * In all cases where a smallint is used, it is assumed that
+    * decreasing the size of this integer to something as low as
+    * a single byte _will_not_ change the functionality of the
+    * application.  e.g. a loop counter that will iterate through
+    * several kilobytes of data should not be SMALLINT.  The most
+    * common place you'll see smallint is for boolean return types.
+    */
    #define SMALLINT int
 #endif
 
-// setting max baud
+/* setting max baud */
 #ifdef _WINDOWS
-   // 0x02 = PARAMSET_19200
+   /* 0x02 = PARAMSET_19200 */
 #define MAX_BAUD 0x02
 #else
-   // 0x06 = PARMSET_115200
+   /* 0x06 = PARMSET_115200 */
 #define MAX_BAUD 0x06
 #endif
 
@@ -155,7 +158,7 @@ typedef unsigned long ulong;
    typedef unsigned char uchar;
    #if !defined(__MINGW32__) && (defined(__CYGWIN__) || defined(__GNUC__))
       typedef unsigned long ulong;
-      //ushort already defined in sys/types.h
+      /* ushort already defined in sys/types.h */
       #include <sys/types.h>
    #else
       #if defined(_WIN32) || defined(WIN32) || defined(__MC68K__) || defined(_WIN32_WCE) || defined(_DOS)  || defined(_WINDOWS) || defined(__MINGW32__)
@@ -167,19 +170,21 @@ typedef unsigned long ulong;
       #include <sys/types.h>
    #endif
    #ifdef SDCC
-      //intent of ushort is 2 bytes unsigned.
-      //for ds390 in sdcc, an int, not a short,
-      //is 2 bytes.
+      /* intent of ushort is 2 bytes unsigned.
+       * for ds390 in sdcc, an int, not a short,
+       * is 2 bytes.
+       */
       typedef unsigned int ushort;
    #endif
 #endif
 
-// general defines
+/* general defines */
 #define WRITE_FUNCTION 1
 #define READ_FUNCTION  0
 
-// error codes
-// todo: investigate these and replace with new Error Handling library
+/* error codes
+ * todo: investigate these and replace with new Error Handling library
+ */
 #define READ_ERROR    -1
 #define INVALID_DIR   -2
 #define NO_FILE       -3
@@ -187,7 +192,7 @@ typedef unsigned long ulong;
 #define WRONG_TYPE    -5
 #define FILE_TOO_BIG  -6
 
-// Misc
+/* Misc */
 #define FALSE          0
 #define TRUE           1
 
@@ -195,34 +200,34 @@ typedef unsigned long ulong;
    #define MAX_PORTNUM    16
 #endif
 
-// mode bit flags
+/* mode bit flags */
 #define MODE_NORMAL                    0x00
 #define MODE_OVERDRIVE                 0x01
 #define MODE_STRONG5                   0x02
 #define MODE_PROGRAM                   0x04
 #define MODE_BREAK                     0x08
 
-// Output flags
+/* Output flags */
 #define LV_ALWAYS          2
 #define LV_OPTIONAL        1
 #define LV_VERBOSE         0
 
-//--------------------------------------------------------------//
-// Error handling
-//--------------------------------------------------------------//
+/*--------------------------------------------------------------*
+ * Error handling                                               *
+ *--------------------------------------------------------------*/
 extern int owGetErrorNum(void);
 extern int owHasErrors(void);
 
-//Clears the stack.
+/* Clears the stack. */
 #define OWERROR_CLEAR() while(owHasErrors()) owGetErrorNum();
 
 #ifdef DEBUG
-   //Raises an exception with extra debug info
+   /* Raises an exception with extra debug info */
    #define OWERROR(err) owRaiseError(err,__LINE__,__FILE__)
    extern void owRaiseError(int,int,char*);
    #define OWASSERT(s,err,ret) if(!(s)){owRaiseError((err),__LINE__,__FILE__);return (ret);}
 #else
-   //Raises an exception with just the error code
+   /* Raises an exception with just the error code */
    #define OWERROR(err) owRaiseError(err)
    extern void owRaiseError(int);
    #define OWASSERT(s,err,ret) if(!(s)){owRaiseError((err));return (ret);}
@@ -231,7 +236,7 @@ extern int owHasErrors(void);
 #ifdef SMALL_MEMORY_TARGET
    #define OWERROR_DUMP(fileno) /*no-op*/;
 #else
-   //Prints the stack out to the given file.
+   /* Prints the stack out to the given file. */
    #define OWERROR_DUMP(fileno) while(owHasErrors()) owPrintErrorMsg(fileno);
    extern void owPrintErrorMsg(FILE *);
    extern void owPrintErrorMsgStd();
@@ -364,7 +369,7 @@ extern int owHasErrors(void);
 #define OWERROR_LIBUSB_SET_ALTINTERFACE_ERROR   123
 #define OWERROR_LIBUSB_NO_ADAPTER_FOUND         124
 
-// One Wire functions defined in ownetu.c
+/* One Wire functions defined in ownetu.c */
 SMALLINT  owFirst(int portnum, SMALLINT do_reset, SMALLINT alarm_only);
 SMALLINT  owNext(int portnum, SMALLINT do_reset, SMALLINT alarm_only);
 void      owSerialNum(int portnum, uchar *serialnum_buf, SMALLINT do_read);
@@ -375,15 +380,15 @@ SMALLINT  owVerify(int portnum, SMALLINT alarm_only);
 SMALLINT  owOverdriveAccess(int portnum);
 
 
-// external One Wire functions defined in owsesu.c
+/* external One Wire functions defined in owsesu.c */
  SMALLINT owAcquire(int portnum, char *port_zstr);
  int      owAcquireEx(const char *port_zstr);
  void     owRelease(int portnum);
 
-// external One Wire functions defined in findtype.c
-// SMALLINT FindDevices(int,uchar FamilySN[][8],SMALLINT,int);
+/* external One Wire functions defined in findtype.c */
+/* SMALLINT FindDevices(int,uchar FamilySN[][8],SMALLINT,int); */
 
-// external One Wire functions from link layer owllu.c
+/* external One Wire functions from link layer owllu.c */
 SMALLINT owTouchReset(int portnum);
 SMALLINT owTouchBit(int portnum, SMALLINT sendbit);
 SMALLINT owTouchByte(int portnum, SMALLINT sendbyte);
@@ -398,10 +403,10 @@ SMALLINT owHasPowerDelivery(int portnum);
 SMALLINT owHasProgramPulse(int portnum);
 SMALLINT owHasOverDrive(int portnum);
 SMALLINT owReadBitPower(int portnum, SMALLINT applyPowerResponse);
-// external One Wire global from owllu.c
+/* external One Wire global from owllu.c */
 extern SMALLINT FAMILY_CODE_04_ALARM_TOUCHRESET_COMPLIANCE;
 
-// external One Wire functions from transaction layer in owtrnu.c
+/* external One Wire functions from transaction layer in owtrnu.c */
 SMALLINT owBlock(int portnum, SMALLINT do_reset, uchar *tran_buf, SMALLINT tran_len);
 SMALLINT owReadPacketStd(int portnum, SMALLINT do_access, int start_page, uchar *read_buf);
 SMALLINT owWritePacketStd(int portnum, int start_page, uchar *write_buf,
@@ -409,11 +414,11 @@ SMALLINT owWritePacketStd(int portnum, int start_page, uchar *write_buf,
 SMALLINT owProgramByte(int portnum, SMALLINT write_byte, int addr, SMALLINT write_cmd,
                        SMALLINT crc_type, SMALLINT do_access);
 
-// link functions
+/* link functions */
 void      msDelay(int len);
 long      msGettick(void);
 
-// ioutil.c functions prototypes
+/* ioutil.c functions prototypes */
 int  EnterString(char *msg, char *buf, int min, int max);
 int  EnterNum(char *msg, int numchars, long *value, long min, long max);
 int  EnterHex(char *msg, int numchars, ulong *value);
@@ -426,10 +431,10 @@ void PrintHex(uchar* buffer, int cnt);
 void PrintChars(uchar* buffer, int cnt);
 void PrintSerialNum(uchar* buffer);
 
-// external functions defined in crcutil.c
+/* external functions defined in crcutil.c */
 void setcrc16(int portnum, ushort reset);
 ushort docrc16(int portnum, ushort cdata);
 void setcrc8(int portnum, uchar reset);
 uchar docrc8(int portnum, uchar x);
 
-#endif //OWNET_H
+#endif /* OWNET_H */

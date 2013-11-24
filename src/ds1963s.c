@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <sys/ioctl.h>
 #include "getput.h"
 #include "ds1963s.h"
@@ -282,14 +283,14 @@ int ibutton_secret_zero(int portnum, int pagenum, int secretnum, int resume)
 
 int
 ds1963s_scratchpad_write(struct ds1963s_client *ctx, uint16_t address,
-                         const char *data, size_t len)
+                         const uint8_t *data, size_t len)
 {
 	return ds1963s_scratchpad_write_resume(ctx, address, data, len, 0);
 }
 
 int
 ds1963s_scratchpad_write_resume(struct ds1963s_client *ctx, uint16_t address,
-                                const char *data, size_t len, int resume)
+                                const uint8_t *data, size_t len, int resume)
 {
 	int portnum = ctx->copr.portnum;
 	uint8_t buf[64];
@@ -324,7 +325,6 @@ int ds1963s_client_memory_read(struct ds1963s_client *ctx, uint16_t address,
 {
 	int portnum = ctx->copr.portnum;
 	uint8_t block[35];
-	int i;
 
 	/* XXX: need to check max read size. */
 	if (size > sizeof(block) - 3)

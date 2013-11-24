@@ -60,9 +60,9 @@ int ds1963s_client_address_to_page(int address);
 
 /* Scratchpad related functions. */
 int ds1963s_scratchpad_write(struct ds1963s_client *ctx, uint16_t address,
-                             const char *data, size_t len);
+                             const uint8_t *data, size_t len);
 int ds1963s_scratchpad_write_resume(struct ds1963s_client *ctx,
-                                    uint16_t address, const char *data,
+                                    uint16_t address, const uint8_t *data,
                                     size_t len, int resume);
 ssize_t ds1963s_scratchpad_read_resume(struct ds1963s_client *ctx,
                                        uint8_t *dst, size_t size,

@@ -16,11 +16,11 @@
 #include "ds1963s.h"
 
 #define DEFAULT_SERIAL_PORT	"/dev/ttyUSB0"
-#define MODE_INFO		0
-#define MODE_READ		1
-#define MODE_READ_AUTH		2
-#define MODE_WRITE		4
-#define MODE_SIGN		8
+#define MODE_INFO		1
+#define MODE_READ		2
+#define MODE_READ_AUTH		4
+#define MODE_WRITE		8
+#define MODE_SIGN		16
 
 void ds1963s_tool_fatal(struct ds1963s_client *ctx)
 {
@@ -93,9 +93,10 @@ void ds1963s_tool_info(struct ds1963s_client *ctx)
 void ds1963s_tool_write(struct ds1963s_client *ctx, uint16_t address,
                         const char *data)
 {
+	const uint8_t *p = (const uint8_t *)data;
 	size_t size = strlen(data);
 
-	if (ds1963s_client_memory_write(ctx, address, data, size) == -1) {
+	if (ds1963s_client_memory_write(ctx, address, p, size) == -1) {
 		ibutton_perror("ds1963s_client_memory_write()");
 		ds1963s_tool_fatal(ctx);
 	}
@@ -129,8 +130,6 @@ ds1963s_tool_read_auth(struct ds1963s_client *ctx, int page, size_t size)
 	int addr = ds1963s_client_page_to_address(page);
 	struct ds1963s_read_auth_page_reply reply;
 	int portnum = ctx->copr.portnum;
-	uint8_t data[32];
-	uint8_t hash[20];
 	int i;
 
         /* Erase the scratchpad to clear the HIDE flag. */
@@ -179,7 +178,7 @@ ds1963s_tool_sign(struct ds1963s_client *ctx, int page, size_t size)
 	printf("Sign data page #%.2d\n", page);
 	printf("---------------------------\n");
 	printf("SHA1 hash                 : ");
-//	ds1963s_client_hash_print(reply.signature);
+/*	ds1963s_client_hash_print(reply.signature); */
 }
 
 void usage(const char *progname)
@@ -208,11 +207,11 @@ int main(int argc, char **argv)
 	const char *device_name = DEFAULT_SERIAL_PORT;
 	struct ds1963s_client ctx;
 	int address, page, size;
-	int i, ret, mode, opt;
-	char *data;
-	int mask;
+	int mask, mode, opt;
+	char *data = NULL;
 
-	address = -1;
+	mode = 0;
+	address = page = size = -1;
 	while ( (opt = getopt_long(argc, argv, optstr, options, NULL)) != -1) {
 		switch (opt) {
 		case 'a':

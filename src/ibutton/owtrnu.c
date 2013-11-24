@@ -78,7 +78,7 @@ static SMALLINT Copy_Scratchpad(int,int,SMALLINT);
 SMALLINT owBlock(int portnum, SMALLINT do_reset, uchar *tran_buf, SMALLINT tran_len)
 {
    uchar sendpacket[320];
-   uchar sendlen=0,pos,i;
+   uchar sendlen=0, i;
 
    // check for a block too big
    if (tran_len > 160)
@@ -106,7 +106,6 @@ SMALLINT owBlock(int portnum, SMALLINT do_reset, uchar *tran_buf, SMALLINT tran_
    }
 
    // add the bytes to send
-   pos = sendlen;
    for (i = 0; i < tran_len; i++)
    {
       sendpacket[sendlen++] = tran_buf[i];
@@ -277,7 +276,7 @@ SMALLINT owWritePacketStd(int portnum, int start_page, uchar *write_buf,
 {
    uchar construct_buffer[32];
    uchar i,buffer_cnt=0,start_address,do_access;
-   ushort lastcrc16;
+   ushort lastcrc16 = 0;
 
    // check to see if data too long to fit on device
    if (write_len > 29)

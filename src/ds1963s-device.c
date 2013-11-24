@@ -121,7 +121,6 @@ void ds1963s_read_auth_page(struct ds1963s_device *ds1963s, int page)
 	uint8_t M[64];
 	uint8_t CC[4];
 	SHA1_CTX ctx;
-	int i;
 
 	/* XXX: set properly. */
 	ds1963s->M = 0;
@@ -166,7 +165,6 @@ void ds1963s_sign_page(struct ds1963s_device *ds1963s)
 {
 	uint8_t M[64];
 	SHA1_CTX ctx;
-	int i;
 
 	/* XXX: set properly. */
 	ds1963s->M = 0;
@@ -210,7 +208,7 @@ int main(void)
 	memset(&ds1963s, 0, sizeof ds1963s);
 	memset(ds1963s.scratchpad, 0xff, sizeof ds1963s.scratchpad);
 	memcpy(ds1963s.secret_memory, "\x00\x00\x01\x00\x01\x05\x07\x00", 8);
-//	memcpy(ds1963s.secret_memory, "\x7c\x06\x3d\x10\xb0\x87\x9c\x1c", 8);
+/*	memcpy(ds1963s.secret_memory, "\x7c\x06\x3d\x10\xb0\x87\x9c\x1c", 8); */
 
 	ds1963s_sign_page(&ds1963s);
 	int i;

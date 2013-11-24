@@ -578,7 +578,6 @@ SMALLINT WriteDataPageSHA18(int portnum, SMALLINT pagenum,
    uchar buffer[32];
    int addr = pagenum << 5, addr_buff;
    uchar es = 0;
-	int i;
 
    OWASSERT( EraseScratchpadSHA18(portnum, addr, resume),
              OWERROR_ERASE_SCRATCHPAD_FAILED, FALSE );

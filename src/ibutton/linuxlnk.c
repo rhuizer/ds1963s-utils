@@ -344,8 +344,8 @@ void BreakCOM(int portnum)
 void SetBaudCOM(int portnum, uchar new_baud)
 {
    struct termios t;
-   int rc;
    speed_t baud;
+   int rc;
 
    // read the attribute structure
    rc = tcgetattr(fd[portnum], &t);
@@ -370,6 +370,8 @@ void SetBaudCOM(int portnum, uchar new_baud)
       case PARMSET_115200:
          baud = B115200;
          break;
+      default:
+         baud = 0;
    }
 
    // set baud in structure

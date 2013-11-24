@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <sys/ioctl.h>
 #include "ds1963s.h"
 #include "ibutton/ownet.h"
@@ -34,11 +35,14 @@ struct brutus
 
 int brutus_init_secret(struct brutus *brute, int secret)
 {
-	assert(secret >= 0 && secret <= 8);
-
-	int addr = ds1963s_client_page_to_address(secret);
         struct ds1963s_read_auth_page_reply reply;
 	int portnum = brute->ctx.copr.portnum;
+	int addr;
+
+	assert(secret >= 0 && secret <= 8);
+
+	/* Calculate the address of this secret. */
+	addr = ds1963s_client_page_to_address(secret);
 
 	/* Erase the scratchpad. */
         EraseScratchpadSHA18(portnum, 0, 0);
@@ -54,7 +58,6 @@ int brutus_init_secret(struct brutus *brute, int secret)
 
 int brutus_init(struct brutus *brute)
 {
-	SHACopr *copr = &brute->ctx.copr;
 	int i;
 
 	/* Initialize the secrets we'll side-channel. */
@@ -122,9 +125,10 @@ void ibutton_hide_set(SHACopr *copr)
 void ds1963s_secret_write_partial(struct ds1963s_client *ctx, int secret, uint8_t *data, size_t len)
 {
 	SHACopr *copr = &ctx->copr;
+	uint8_t buf[32];
 	int secret_addr;
-	char buf[32];
-	int i;
+	int address;
+	uint8_t es;
 
         if (secret < 0 || secret > 7) {
                 fprintf(stderr, "Invalid secret page.\n");
@@ -148,8 +152,6 @@ void ds1963s_secret_write_partial(struct ds1963s_client *ctx, int secret, uint8_
 		exit(EXIT_FAILURE);
 	}
 
-	int address;
-	uint8_t es;
 	if (ReadScratchpadSHA18(copr->portnum, &address, &es, buf, 0) == FALSE) {
 		fprintf(stderr, "Error reading scratchpad.\n");
 		exit(EXIT_FAILURE);
@@ -185,7 +187,6 @@ int brutus_do_one(struct brutus *brute, int num)
 	int addr = ds1963s_client_page_to_address(num);
         struct ds1963s_read_auth_page_reply reply;
 	SHACopr *copr = &brute->ctx.copr;
-	int i;
 
 	ds1963s_secret_write_partial(
 		&brute->ctx,		/* DS1963S context */
@@ -251,8 +252,7 @@ void brutus_do_secret(struct brutus *brute, int num)
 int main(int argc, char **argv)
 {
 	struct brutus brute;
-	uint8_t serial[8];
-	int i, ret;
+	int i;
 
 	if (brutus_init(&brute) == -1) {
 		brutus_perror("brutus_init()");
