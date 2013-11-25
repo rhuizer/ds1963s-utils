@@ -2,6 +2,8 @@
  *
  * A software implementation of the DS1963S iButton.
  *
+ * Dedicated to Yuzuyu Arielle Huizer.
+ *
  * -- Ronald Huizer / r.huizer@xs4all.nl / 2013
  */
 #include <stdio.h>
@@ -116,7 +118,7 @@ static void __sha1_get_output_1(uint8_t SP[32], uint32_t A, uint32_t B,
 	SP[27] = (A >> 24) & 0xFF;
 }
 
-void ds1963s_read_auth_page(struct ds1963s_device *ds1963s, int page)
+void ds1963s_dev_read_auth_page(struct ds1963s_device *ds1963s, int page)
 {
 	uint8_t M[64];
 	uint8_t CC[4];
@@ -136,7 +138,7 @@ void ds1963s_read_auth_page(struct ds1963s_device *ds1963s, int page)
 		ds1963s->secret_memory,
 		CC,
 		ds1963s->data_memory,
-		0x18,
+		DS1963S_DEVICE_FAMILY,
 		__mp_get(ds1963s->M, ds1963s->X, page),
 		ds1963s->serial,
 		ds1963s->scratchpad
@@ -208,7 +210,6 @@ int main(void)
 	memset(&ds1963s, 0, sizeof ds1963s);
 	memset(ds1963s.scratchpad, 0xff, sizeof ds1963s.scratchpad);
 	memcpy(ds1963s.secret_memory, "\x00\x00\x01\x00\x01\x05\x07\x00", 8);
-/*	memcpy(ds1963s.secret_memory, "\x7c\x06\x3d\x10\xb0\x87\x9c\x1c", 8); */
 
 	ds1963s_sign_page(&ds1963s);
 	int i;

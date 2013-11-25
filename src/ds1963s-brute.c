@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include "ds1963s.h"
+#include "ds1963s-device.h"
 #include "ibutton/ownet.h"
 #include "ibutton/shaib.h"
 
@@ -30,6 +31,7 @@ struct brutus_secret
 struct brutus
 {
 	struct ds1963s_client	ctx;
+	struct ds1963s_device	dev;
 	struct brutus_secret	secrets[8];
 };
 
@@ -45,13 +47,58 @@ int brutus_init_secret(struct brutus *brute, int secret)
 	addr = ds1963s_client_page_to_address(secret);
 
 	/* Erase the scratchpad. */
-        EraseScratchpadSHA18(portnum, 0, 0);
+	EraseScratchpadSHA18(portnum, 0, 0);
 
 	/* Read auth. page over the current scratchpad/data/etc. */
 	if (ds1963s_client_read_auth(&brute->ctx, addr, &reply, 0) == -1)
 		return -1;
 
 	memcpy(brute->secrets[secret].target_hmac, reply.signature, 20);
+
+	return 0;
+}
+
+int brutus_init_device(struct brutus *brute)
+{
+	struct ds1963s_client *ctx = &brute->ctx;
+	struct ds1963s_rom rom;
+	uint32_t counters[16];
+	uint8_t buf[256];
+	int i;
+
+	/* Get the DS1963S serial number. */
+	if (ds1963s_client_rom_get(ctx, &rom) == -1)
+		return -1;
+
+	/* We only support the DS1963S. */
+	if (rom.family != 0x18)
+		return -1;
+
+	/* Get the write cycle counters. */
+	if (ds1963s_write_cycle_get_all(ctx, counters) == -1)
+		return -1;
+
+	/* Get all non-write cycle counted data pages. */
+	for (i = 0; i < 8; i++) {
+		int r;
+
+		r = ds1963s_client_memory_read(ctx, 32 * i, &buf[32 * i], 32);
+		if (r == -1)
+			return -1;
+	}
+
+	/* Initialize the software DS1963S implementation. */
+	memset(&brute->dev, 0, sizeof brute->dev);
+	brute->dev.family = rom.family;
+	memcpy(brute->dev.serial, rom.serial, 6);
+	memset(brute->dev.scratchpad, 0xFF, sizeof brute->dev.scratchpad);
+	memcpy(brute->dev.data_memory, buf, sizeof buf);
+
+	/* Initialize the write cycle counters. */
+	for (i = 0; i < 8; i++) {
+		brute->dev.data_wc[i]   = counters[i];
+		brute->dev.secret_wc[i] = counters[i + 8];
+	}
 
 	return 0;
 }
@@ -66,6 +113,12 @@ int brutus_init(struct brutus *brute)
 	/* Initialize the DS1963S client. */
 	if (ds1963s_client_init(&brute->ctx, SERIAL_PORT) == -1)
 		return -1;
+
+	/* Initialize the software implementation of the DS1963S. */
+	if (brutus_init_device(brute) == -1) {
+		ds1963s_client_destroy(&brute->ctx);
+		return -1;
+	}
 
 	/* Calculate the target HMACs for all the secrets. */
 	for (i = 0; i < 8; i++) {
