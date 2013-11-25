@@ -63,8 +63,6 @@ static void __sha1_get_input_2(uint8_t M[64], uint8_t *SS, uint8_t *CC,
                                uint8_t *PP, uint8_t FAMC, uint8_t MP,
                                uint8_t *SN, uint8_t *SP)
 {
-	printf("CC[0]: %x\n", CC[0]);
-
 	memcpy(&M[ 0], &SS[ 0],  4);
 	memcpy(&M[ 4], &PP[ 0], 32);
 	memcpy(&M[36], &CC[ 0],  4);
@@ -135,9 +133,9 @@ void ds1963s_dev_read_auth_page(struct ds1963s_device *ds1963s, int page)
 
 	__sha1_get_input_2(
 		M,
-		ds1963s->secret_memory,
+		&ds1963s->secret_memory[(page % 8) * 8],
 		CC,
-		ds1963s->data_memory,
+		&ds1963s->data_memory[(page % 16) * 32],
 		DS1963S_DEVICE_FAMILY,
 		__mp_get(ds1963s->M, ds1963s->X, page),
 		ds1963s->serial,

