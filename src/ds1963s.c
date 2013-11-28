@@ -1,3 +1,11 @@
+/* ds1963s-client.c
+ *
+ * Routines for accessing a DS1963S dongle connected over serial as a client.
+ *
+ * Dedicated to Yuzuyu Arielle Huizer.
+ *
+ * -- Ronald Huizer, 2013
+ */
 #include <assert.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -490,6 +498,73 @@ int ds1963s_client_hide_set(struct ds1963s_client *ctx)
 	 */
 	if (FindNewSHA(ctx->copr.portnum, ctx->copr.devAN, TRUE) == FALSE)
 		return -1;
+
+	return 0;
+}
+
+int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
+                                uint8_t *data, size_t len)
+{
+	SHACopr *copr = &ctx->copr;
+	uint8_t buf[32];
+	int secret_addr;
+	int address;
+	uint8_t es;
+
+	assert(secret >= 0 && secret <= 7);
+	assert(len <= 8);
+
+        secret_addr = 0x200 + secret * 8;
+
+	/* Erase the scratchpad to clear the HIDE flag. */
+	if (EraseScratchpadSHA18(copr->portnum, 0, 0) == FALSE)
+		return -1;
+
+	/* Write the secret data to the scratchpad. */ 
+	if (ds1963s_scratchpad_write(ctx, 0, data, len) == -1) {
+		fprintf(stderr, "Error writing scratchpad.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Read it back to validate it. */
+	if (ReadScratchpadSHA18(copr->portnum, &address, &es, buf, 0) == FALSE) {
+		fprintf(stderr, "Error reading scratchpad.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Verify if we read what we wrote out. */
+	if (memcmp(buf, data, len) != 0)
+		return -1;
+
+	/* Now latch in TA1 and TA2 with secret_addr. */
+	if (ds1963s_scratchpad_write(ctx, secret_addr, data, len) == -1) {
+		fprintf(stderr, "Error writing scratchpad.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Read back address and es for validation. */
+	if (ReadScratchpadSHA18(copr->portnum, &address, &es, buf, 0) == FALSE) {
+		fprintf(stderr, "Error reading scratchpad (1).\n");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Set the hide flag so we can copy to the secret. */
+	if (ds1963s_client_hide_set(ctx) == -1)
+		return -1;
+
+	/* ??? */
+	if (ReadScratchpadSHA18(copr->portnum, &address, &es, buf, 0) == FALSE) {
+		return -1;
+		fprintf(stderr, "Error reading scratchpad (2).\n");
+		owPrintErrorMsg(stdout);
+		exit(EXIT_FAILURE);
+	}
+
+	/* Copy scratchpad data to the secret. */
+	if (CopyScratchpadSHA18(copr->portnum, secret_addr, len, 0) == FALSE) {
+		fprintf(stderr, "Error copying scratchpad.\n");
+		exit(EXIT_FAILURE);
+	}
 
 	return 0;
 }
