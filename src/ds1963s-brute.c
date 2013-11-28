@@ -22,7 +22,7 @@
 #include "ibutton/shaib.h"
 
 #define SERIAL_PORT		"/dev/ttyUSB0"
-#define UI_BANNER_HEAD		"DS1963S Brute"
+#define UI_BANNER_HEAD		"DS1963S complexity reduction attack"
 #define UI_BANNER_TAIL		"Ronald Huizer (C) 2013"
 #define UI_COLUMNS_MIN		80
 #define UI_ROWS_MIN		24
@@ -300,7 +300,7 @@ struct callback_cookie
 };
 
 /* Update the progress bar for the hardware attack. */
-NCURSES_WINDOW_CB update_phase1_progress(WINDOW *w, void *cookie)
+int update_phase1_progress(WINDOW *w, void *cookie)
 {
 	struct callback_cookie *ctx = (struct callback_cookie *)cookie;
 	int piece_count, piece_size = (256 * 4) / 16;
@@ -327,7 +327,7 @@ NCURSES_WINDOW_CB update_phase1_progress(WINDOW *w, void *cookie)
 }
 
 /* Update the progress bar for the software calculation. */
-NCURSES_WINDOW_CB update_phase2_progress(WINDOW *w, void *cookie)
+int update_phase2_progress(WINDOW *w, void *cookie)
 {
 	struct callback_cookie *ctx = (struct callback_cookie *)cookie;
 	char *bar = "                ";
@@ -343,7 +343,7 @@ NCURSES_WINDOW_CB update_phase2_progress(WINDOW *w, void *cookie)
 	return 0;
 }
 
-NCURSES_WINDOW_CB finalize_progress(WINDOW *w, void *cookie)
+int finalize_progress(WINDOW *w, void *cookie)
 {
 	struct callback_cookie *ctx = (struct callback_cookie *)cookie;
 	char *bar = "                ";
@@ -371,7 +371,7 @@ void brutus_do_secret(struct brutus *brute, int num)
 	int i, ret;
 
 	do {
-		update_phase1_progress(w, &cookie);
+		use_window(w, update_phase1_progress, &cookie);
 		ret = brutus_do_one(brute, num);
 	} while (ret == 1);
 
@@ -389,7 +389,7 @@ void brutus_do_secret(struct brutus *brute, int num)
 
 		if (i % (0xFFFFFF / 16) == 0) {
 			cookie.phase2_count = i;
-			update_phase2_progress(w, &cookie);
+			use_window(w, update_phase2_progress, &cookie);
 		}
 
 		if (!memcmp(secret->target_hmac, &brute->dev.scratchpad[8], 20)) {
@@ -408,7 +408,7 @@ void brutus_do_secret(struct brutus *brute, int num)
 	if (i == 0xFFFFFF)
 		; /* error */
 
-	finalize_progress(w, &cookie);
+	use_window(w, finalize_progress, &cookie);
 }
 
 void brutus_ui_destroy(void)
