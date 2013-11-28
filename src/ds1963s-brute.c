@@ -48,6 +48,7 @@ struct brutus
 struct brutus_interface
 {
 	WINDOW		*header;
+	WINDOW		*serial;
 	WINDOW		*main;
 	WINDOW		*secrets;
 	int		main_rows;
@@ -507,10 +508,10 @@ int brutus_ui_secrets_init(struct brutus *brute)
 	WINDOW *w;
 
 	width = ui.main_columns - 4;
-	if ( (w = ui.secrets = subwin(ui.main, 20, width, 2, 2)) == NULL)
+	if ( (w = ui.secrets = subwin(ui.main, 18, width, 4, 2)) == NULL)
 		return -1;
 
-	if (box(ui.secrets, ACS_VLINE, ACS_HLINE) == ERR)
+	if (box(w, ACS_VLINE, ACS_HLINE) == ERR)
 		return -1;
 
 	for (i = 0; i < 8; i++) {
@@ -524,6 +525,30 @@ int brutus_ui_secrets_init(struct brutus *brute)
 		__hmac_hex(hmac, brute->secrets[i].target_hmac);
 		waddstr(w, hmac);
 	}
+
+	wrefresh(w);
+
+	return 0;
+}
+
+int brutus_ui_serial_init(struct brutus *brute)
+{
+	int width = ui.main_columns - 4;
+	WINDOW *w;
+	int i;
+
+	if ( (w = ui.serial = subwin(ui.main, 3, width, 1, 2)) == NULL)
+		return -1;
+
+	if (box(w, ACS_VLINE, ACS_HLINE) == ERR)
+		return -1;
+
+	if (wmove(w, 1, 1) == ERR)
+		return -1;
+
+	waddstr(w, "DS1963S found with serial number: ");
+	for (i = 0; i < sizeof brute->dev[0].serial; i++)
+		wprintw(w, "%.2x", brute->dev[0].serial[i]);
 
 	wrefresh(w);
 
@@ -593,6 +618,10 @@ int brutus_ui_init(struct brutus *brute)
 	mvwaddstr(ui.header, 0, 1, UI_BANNER_HEAD);
 	mvwaddstr(ui.header, 0, ui.main_columns - sizeof UI_BANNER_TAIL,
 	          UI_BANNER_TAIL);
+
+	/* Initialize the serial sub-window. */
+	if (brutus_ui_serial_init(brute) == -1)
+		return -1;
 
 	/* Now initialize the secrets sub-window. */
 	if (brutus_ui_secrets_init(brute) == -1)
