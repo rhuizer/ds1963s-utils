@@ -6,6 +6,7 @@
  *
  *  -- Ronald Huizer, 2013
  */
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -21,6 +22,7 @@
 #define MODE_READ_AUTH		4
 #define MODE_WRITE		8
 #define MODE_SIGN		16
+#define MODE_WRITE_SECRET	32
 
 void ds1963s_tool_fatal(struct ds1963s_client *ctx)
 {
@@ -91,13 +93,19 @@ void ds1963s_tool_info(struct ds1963s_client *ctx)
 }
 
 void ds1963s_tool_write(struct ds1963s_client *ctx, uint16_t address,
-                        const char *data)
+                        const uint8_t *data, size_t len)
 {
-	const uint8_t *p = (const uint8_t *)data;
-	size_t size = strlen(data);
-
-	if (ds1963s_client_memory_write(ctx, address, p, size) == -1) {
+	if (ds1963s_client_memory_write(ctx, address, data, len) == -1) {
 		ibutton_perror("ds1963s_client_memory_write()");
+		ds1963s_tool_fatal(ctx);
+	}
+}
+
+void ds1963s_tool_secret_write(struct ds1963s_client *ctx, int secret,
+                               const uint8_t *data, size_t len)
+{
+	if (ds1963s_client_secret_write(ctx, secret, data, len) == -1) {
+		ibutton_perror("ds1963s_client_secret_write()");
 		ds1963s_tool_fatal(ctx);
 	}
 }
@@ -187,6 +195,37 @@ void usage(const char *progname)
 		progname ? progname : "ds1963s-tool");
 }
 
+inline int __dehex_char(char c)
+{
+	if (c >= '0' && c <= '9')
+		return c - '0';
+
+	c = tolower(c);
+
+	if (c >= 'a' && c <= 'f')
+		return 10 + c - 'a';
+
+	return -1;
+}
+
+int __dehex(uint8_t *dst, const char *src, size_t n)
+{
+	size_t src_len = strlen(src);
+	size_t i, j;
+
+	if (src_len == 0 || src_len % 2 != 0)
+		return -1;
+
+	for (i = 0; i < src_len; src_len++)
+		if (!isalnum(src[i]))
+			return -1;
+
+	for (i = j = 0; i < src_len - 1 && j < n; i += 2, j++)
+		dst[j] = __dehex_char(src[i]) * 16 + __dehex_char(src[i + 1]);
+
+	return 0;
+}
+
 static const struct option options[] =
 {
 	{ "address",		1,	NULL,	'a' },
@@ -196,24 +235,35 @@ static const struct option options[] =
 	{ "read",		1,	NULL,	'r' },
 	{ "read-auth",		1,	NULL,	't' },
 	{ "sign-data",		1,	NULL,	'd' },
-	{ "write",		1,	NULL,	'w' },
-	{ NULL,			0,	NULL,	0   }
+	{ "write",		0,	NULL,	'w' },
+	{ "write-secret",	1,	NULL,	 0  },
+	{ NULL,			0,	NULL,	 0  }
 };
 
-const char optstr[] = "a:d:r:p:s:iw:";
+const char optstr[] = "a:d:r:p:s:iw";
 
 int main(int argc, char **argv)
 {
 	const char *device_name = DEFAULT_SERIAL_PORT;
 	struct ds1963s_client ctx;
 	int address, page, size;
-	int mask, mode, opt;
-	char *data = NULL;
+	int mask, mode, o;
+	uint8_t data[32];
+	size_t len;
+	int secret;
+	int i;
 
-	mode = 0;
-	address = page = size = -1;
-	while ( (opt = getopt_long(argc, argv, optstr, options, NULL)) != -1) {
-		switch (opt) {
+	len = mode = 0;
+	address = page = secret = size = -1;
+	while ( (o = getopt_long(argc, argv, optstr, options, &i)) != -1) {
+		switch (o) {
+		case 0:
+			if (!strcmp(options[i].name, "write-secret")) {
+				mode = MODE_WRITE_SECRET;
+				secret = atoi(optarg);
+				break;
+			}
+			break;
 		case 'a':
 			address = atoi(optarg);
 			page = ds1963s_client_address_to_page(address);
@@ -239,7 +289,6 @@ int main(int argc, char **argv)
 			mode = MODE_READ_AUTH;
 			break;
 		case 'w':
-			data = optarg;
 			mode = MODE_WRITE;
 			break;
 		}
@@ -250,6 +299,22 @@ int main(int argc, char **argv)
 	if ( (mode & mask) != 0 && address == -1) {
 		usage(argv[0]);
 		exit(EXIT_FAILURE);
+	}
+
+	/* Write functions take an extra argument. */
+	mask = MODE_WRITE | MODE_WRITE_SECRET;
+	if ( (mode & mask) != 0) {
+		if (optind >= argc) {
+			usage(argv[0]);
+			exit(EXIT_FAILURE);
+		}
+
+		if (__dehex(data, argv[optind], 32) == -1) {
+			usage(argv[0]);
+			exit(EXIT_FAILURE);
+		}
+
+		len = strlen(argv[optind]) / 2;
 	}
 
 	/* Pre-check if the serial device is accessible. */
@@ -278,7 +343,10 @@ int main(int argc, char **argv)
 		ds1963s_tool_sign(&ctx, page, size);
 		break;
 	case MODE_WRITE:
-		ds1963s_tool_write(&ctx, address, data);
+		ds1963s_tool_write(&ctx, address, data, len);
+		break;
+	case MODE_WRITE_SECRET:
+		ds1963s_tool_secret_write(&ctx, secret, data, len);
 		break;
 	}
 
