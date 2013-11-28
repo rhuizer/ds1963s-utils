@@ -40,7 +40,7 @@ struct brutus_secret
 struct brutus
 {
 	struct ds1963s_client	ctx;
-	struct ds1963s_device	dev;
+	struct ds1963s_device	dev[8];
 	struct brutus_secret	secrets[8];
 	pthread_t		threads[8];
 };
@@ -111,17 +111,32 @@ int brutus_init_device(struct brutus *brute)
 	}
 
 	/* Initialize the software DS1963S implementation. */
-	memset(&brute->dev, 0, sizeof brute->dev);
-	brute->dev.family = rom.family;
-	memcpy(brute->dev.serial, rom.serial, 6);
-	memset(brute->dev.scratchpad, 0xFF, sizeof brute->dev.scratchpad);
-	memcpy(brute->dev.data_memory, buf, sizeof buf);
+	memset(&brute->dev[0], 0, sizeof brute->dev[0]);
+	brute->dev[0].family = rom.family;
+	memcpy(brute->dev[0].serial, rom.serial, 6);
+	memset(brute->dev[0].scratchpad, 0xFF,
+	       sizeof brute->dev[0].scratchpad);
+	memcpy(brute->dev[0].data_memory, buf, sizeof buf);
 
 	/* Initialize the write cycle counters. */
 	for (i = 0; i < 8; i++) {
-		brute->dev.data_wc[i]   = counters[i];
-		brute->dev.secret_wc[i] = counters[i + 8];
+		brute->dev[0].data_wc[i]   = counters[i];
+		brute->dev[0].secret_wc[i] = counters[i + 8];
 	}
+
+	return 0;
+}
+
+int brutus_init_devices(struct brutus *brute)
+{
+	int i;
+
+	if (brutus_init_device(brute) == -1)
+		return -1;
+
+	/* A shallow copy suffices for ds1963s_device structures. */
+	for (i = 1; i < 8; i++)
+		memcpy(&brute->dev[i], &brute->dev[0], sizeof brute->dev[0]);
 
 	return 0;
 }
@@ -138,7 +153,7 @@ int brutus_init(struct brutus *brute)
 		return -1;
 
 	/* Initialize the software implementation of the DS1963S. */
-	if (brutus_init_device(brute) == -1) {
+	if (brutus_init_devices(brute) == -1) {
 		ds1963s_client_destroy(&brute->ctx);
 		return -1;
 	}
@@ -402,24 +417,25 @@ void *brutus_phase2_thread(void *phase2_cookie)
 {
 	struct phase2_cookie *ctx = (struct phase2_cookie *)phase2_cookie;
 	struct brutus_secret *secret = &ctx->brute->secrets[ctx->num];
+	struct ds1963s_device *dev = &ctx->brute->dev[ctx->num];
 	WINDOW *w = ui.secrets;
 	int num = ctx->num;
 	uint64_t i;
 
 	/* Calculate the remaining 4 bytes in software. */
-	memcpy(&ctx->brute->dev.secret_memory[num * 8], secret->secret, 4);
+	memcpy(&dev->secret_memory[num * 8], secret->secret, 4);
 	for (i = 0; i < 0xFFFFFFFF; i++) {
-		ctx->brute->dev.secret_memory[num * 8 + 4] = (i >>  0) & 0xFF;
-		ctx->brute->dev.secret_memory[num * 8 + 5] = (i >>  8) & 0xFF;
-		ctx->brute->dev.secret_memory[num * 8 + 6] = (i >> 16) & 0xFF;
-		ctx->brute->dev.secret_memory[num * 8 + 7] = (i >> 24) & 0xFF;
+		dev->secret_memory[num * 8 + 4] = (i >>  0) & 0xFF;
+		dev->secret_memory[num * 8 + 5] = (i >>  8) & 0xFF;
+		dev->secret_memory[num * 8 + 6] = (i >> 16) & 0xFF;
+		dev->secret_memory[num * 8 + 7] = (i >> 24) & 0xFF;
 
-		ds1963s_dev_read_auth_page(&ctx->brute->dev, num);
+		ds1963s_dev_read_auth_page(dev, num);
 
 		if (i % (0xFFFFFFFF / 16) == 0)
 			update_phase2_progress(w, num, i);
 
-		if (!memcmp(secret->target_hmac, &ctx->brute->dev.scratchpad[8], 20)) {
+		if (!memcmp(secret->target_hmac, &dev->scratchpad[8], 20)) {
 			secret->secret[4] = (i >>  0) & 0xFF;
 			secret->secret[5] = (i >>  8) & 0xFF;
 			secret->secret[6] = (i >> 16) & 0xFF;
@@ -427,12 +443,7 @@ void *brutus_phase2_thread(void *phase2_cookie)
 			break;
 		}
 
-		/* We need to erase the scratchpad again, as the device has
-		 * stored the HMAC there.
-		 *
-		 * XXX: FIXME NOT THREAD SAFE
-		 */
-		memset(ctx->brute->dev.scratchpad, 0xFF, 32);
+		memset(dev->scratchpad, 0xFF, 32);
 	}
 
 	finalize_phase2_progress(w, secret, num);
