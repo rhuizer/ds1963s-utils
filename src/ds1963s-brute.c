@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <ncurses.h>
+#include <pthread.h>
 #include <sys/ioctl.h>
 #include "ds1963s.h"
 #include "ds1963s-device.h"
@@ -41,6 +42,7 @@ struct brutus
 	struct ds1963s_client	ctx;
 	struct ds1963s_device	dev;
 	struct brutus_secret	secrets[8];
+	pthread_t		threads[8];
 };
 
 struct brutus_interface
@@ -50,6 +52,7 @@ struct brutus_interface
 	WINDOW		*secrets;
 	int		main_rows;
 	int		main_columns;
+	pthread_mutex_t	mutex;
 };
 
 /* The main brutus curses interface. */
@@ -292,107 +295,111 @@ int brutus_do_one(struct brutus *brute, int num)
 	return 1;
 }
 
-struct callback_cookie
-{
-	int			num;
-	struct brutus_secret	*secret;
-	int			phase2_count;
-};
-
 /* Update the progress bar for the hardware attack. */
-int update_phase1_progress(WINDOW *w, void *cookie)
+int update_phase1_progress(WINDOW *w, struct brutus_secret *secret, int num)
 {
-	struct callback_cookie *ctx = (struct callback_cookie *)cookie;
 	int piece_count, piece_size = (256 * 4) / 16;
 	char *bar = "                ";
 
+	if (pthread_mutex_lock(&ui.mutex) != 0)
+		exit(EXIT_FAILURE);
+
 	/* Print the attempted key bytes. */
 	wattron(w, COLOR_PAIR(3));
-	mvwprintw(w, ctx->num * 2 + 1, ctx->secret->secret_idx * 2 + 12,
-	          "%.2x", ctx->secret->secret[ctx->secret->secret_idx]);
+	mvwprintw(w, num * 2 + 1, secret->secret_idx * 2 + 12,
+	          "%.2x", secret->secret[secret->secret_idx]);
 
 	/* Print the progress bar.  It's 16 bytes wide, and we have
 	 * to update it for 256 * 8 attempts in the worst case.
 	 */
-	piece_count = ctx->secret->secret_idx * 256 +
-	              ctx->secret->secret[ctx->secret->secret_idx];
+	piece_count = secret->secret_idx * 256 +
+	              secret->secret[secret->secret_idx];
 
 	wattron(w, A_REVERSE | COLOR_PAIR(4));
-	mvwprintw(w, ctx->num * 2 + 2, 12, "%s",
+	mvwprintw(w, num * 2 + 2, 12, "%s",
 	          &bar[16 - piece_count / piece_size]);
 	wattroff(w, A_REVERSE);
 	wrefresh(w);
+
+	if (pthread_mutex_unlock(&ui.mutex) != 0)
+		exit(EXIT_FAILURE);
 
 	return 0;
 }
 
 /* Update the progress bar for the software calculation. */
-int update_phase2_progress(WINDOW *w, void *cookie)
+int update_phase2_progress(WINDOW *w, int num, int count)
 {
-	struct callback_cookie *ctx = (struct callback_cookie *)cookie;
 	char *bar = "                ";
 	int piece_size;
 
+	if (pthread_mutex_lock(&ui.mutex) != 0)
+		exit(EXIT_FAILURE);
+
 	piece_size = 0xFFFFFF / 16;
 	wattron(w, A_REVERSE | COLOR_PAIR(5));
-	mvwprintw(w, ctx->num * 2 + 2, 12, "%s",
-	          &bar[16 - ctx->phase2_count / piece_size]);
+	mvwprintw(w, num * 2 + 2, 12, "%s", &bar[16 - count / piece_size]);
 	wattroff(w, A_REVERSE);
 	wrefresh(w);
+
+	if (pthread_mutex_unlock(&ui.mutex) != 0)
+		exit(EXIT_FAILURE);
 
 	return 0;
 }
 
-int finalize_progress(WINDOW *w, void *cookie)
+int finalize_progress(WINDOW *w, struct brutus_secret *secret, int num)
 {
-	struct callback_cookie *ctx = (struct callback_cookie *)cookie;
 	char *bar = "                ";
+
+	if (pthread_mutex_lock(&ui.mutex) != 0)
+		exit(EXIT_FAILURE);
 
 	/* Update the progress bar for the software calculation. */
 	wattron(w, A_REVERSE | COLOR_PAIR(5));
-	mvwprintw(w, ctx->num * 2 + 2, 12, "%s", bar);
+	mvwprintw(w, num * 2 + 2, 12, "%s", bar);
 	wattroff(w, A_REVERSE);
 
 	/* Update the secret as well. */
 	wattron(w, COLOR_PAIR(3));
-	mvwprintw(w, ctx->num * 2 + 1, 22, "%.2x%.2x%.2x",
-		ctx->secret->secret[5], ctx->secret->secret[6],
-		ctx->secret->secret[7]);
+	mvwprintw(w, num * 2 + 1, 22, "%.2x%.2x%.2x",
+		secret->secret[5], secret->secret[6],
+		secret->secret[7]);
 	wrefresh(w);
+
+	if (pthread_mutex_unlock(&ui.mutex) != 0)
+		exit(EXIT_FAILURE);
 
 	return 0;
 }
 
-void brutus_do_secret(struct brutus *brute, int num)
+struct phase2_cookie
 {
-	struct brutus_secret *secret = &brute->secrets[num];
-	struct callback_cookie cookie = { num, secret, 0 };
+	struct brutus	*brute;
+	int		num;
+};
+
+void *brutus_phase2_thread(void *phase2_cookie)
+{
+	struct phase2_cookie *ctx = (struct phase2_cookie *)phase2_cookie;
+	struct brutus_secret *secret = &ctx->brute->secrets[ctx->num];
 	WINDOW *w = ui.secrets;
-	int i, ret;
-
-	do {
-		use_window(w, update_phase1_progress, &cookie);
-		ret = brutus_do_one(brute, num);
-	} while (ret == 1);
-
-	if (ret == -1)
-		exit(EXIT_FAILURE);
+	int num = ctx->num;
+	int i;
 
 	/* Calculate the remaining 3 bytes in software. */
-	memcpy(&brute->dev.secret_memory[num * 8], secret->secret, 5);
+	memcpy(&ctx->brute->dev.secret_memory[num * 8], secret->secret, 5);
 	for (i = 0; i < 0xFFFFFF; i++) {
-		brute->dev.secret_memory[num * 8 + 5] = (i >>  0) & 0xFF;
-		brute->dev.secret_memory[num * 8 + 6] = (i >>  8) & 0xFF;
-		brute->dev.secret_memory[num * 8 + 7] = (i >> 16) & 0xFF;
+		ctx->brute->dev.secret_memory[num * 8 + 5] = (i >>  0) & 0xFF;
+		ctx->brute->dev.secret_memory[num * 8 + 6] = (i >>  8) & 0xFF;
+		ctx->brute->dev.secret_memory[num * 8 + 7] = (i >> 16) & 0xFF;
 
-		ds1963s_dev_read_auth_page(&brute->dev, num);
+		ds1963s_dev_read_auth_page(&ctx->brute->dev, num);
 
-		if (i % (0xFFFFFF / 16) == 0) {
-			cookie.phase2_count = i;
-			use_window(w, update_phase2_progress, &cookie);
-		}
+		if (i % (0xFFFFFF / 16) == 0)
+			update_phase2_progress(w, num, i);
 
-		if (!memcmp(secret->target_hmac, &brute->dev.scratchpad[8], 20)) {
+		if (!memcmp(secret->target_hmac, &ctx->brute->dev.scratchpad[8], 20)) {
 			secret->secret[5] = (i >>  0) & 0xFF;
 			secret->secret[6] = (i >>  8) & 0xFF;
 			secret->secret[7] = (i >> 16) & 0xFF;
@@ -402,13 +409,43 @@ void brutus_do_secret(struct brutus *brute, int num)
 		/* We need to erase the scratchpad again, as the device has
 		 * stored the HMAC there.
 		 */
-		memset(brute->dev.scratchpad, 0xFF, 32);
+		memset(ctx->brute->dev.scratchpad, 0xFF, 32);
 	}
 
-	if (i == 0xFFFFFF)
-		; /* error */
+	finalize_progress(w, secret, num);
+	free(phase2_cookie);
 
-	use_window(w, finalize_progress, &cookie);
+	return NULL;
+}
+
+void brutus_do_secret(struct brutus *brute, int num)
+{
+	struct brutus_secret *secret = &brute->secrets[num];
+	struct phase2_cookie *phase2_cookie;
+	WINDOW *w = ui.secrets;
+	int ret;
+
+	do {
+		update_phase1_progress(w, secret, num);
+		ret = brutus_do_one(brute, num);
+	} while (ret == 1);
+
+	if (ret == -1)
+		exit(EXIT_FAILURE);
+
+	/* Fire up the phase2 thread. */
+	phase2_cookie = malloc(sizeof *phase2_cookie);
+	phase2_cookie->brute = brute;
+	phase2_cookie->num = num;
+
+	pthread_create(
+		&brute->threads[num],
+		NULL,
+		brutus_phase2_thread,
+		phase2_cookie
+	);
+		
+//	brutus_phase2_thread(phase2_cookie);
 }
 
 void brutus_ui_destroy(void)
@@ -524,6 +561,9 @@ int brutus_ui_init(struct brutus *brute)
 		return -1;
 
 	if (refresh() == -1)
+		return -1;
+
+	if (pthread_mutex_init(&ui.mutex, NULL) != 0)
 		return -1;
 
 	return 0;
