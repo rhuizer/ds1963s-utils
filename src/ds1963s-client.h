@@ -1,5 +1,5 @@
-#ifndef __DS1963S_H
-#define __DS1963S_H
+#ifndef __DS1963S_CLIENT_H
+#define __DS1963S_CLIENT_H
 
 #include "ibutton/shaib.h"
 
@@ -100,4 +100,4 @@ uint16_t ds1963s_crc16(const uint8_t *buf, size_t count);
 };
 #endif	/* __cplusplus */
 
-#endif	/* !__DS1963S_H */
+#endif	/* !__DS1963S_CLIENT_H */

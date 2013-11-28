@@ -1,12 +1,11 @@
-/*
- *  ds1963s-brute.c
+/* ds1963s-brute.c
  *
- *  A complexity reduction attack to uncover the eight secrets on the DS1963S
- *  iButton.
+ * A complexity reduction attack to uncover the eight secrets on the DS1963S
+ * iButton.
  *
- *  Dedicated to Yuzuyu Arielle Huizer.
+ * Dedicated to Yuzuyu Arielle Huizer.
  *
- *  -- Ronald Huizer, 2013
+ * -- Ronald Huizer, 2013
  */
 #include <assert.h>
 #include <stdio.h>
@@ -17,7 +16,7 @@
 #include <ncurses.h>
 #include <pthread.h>
 #include <sys/ioctl.h>
-#include "ds1963s.h"
+#include "ds1963s-client.h"
 #include "ds1963s-device.h"
 #include "ibutton/ownet.h"
 #include "ibutton/shaib.h"

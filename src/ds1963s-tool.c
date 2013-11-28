@@ -13,7 +13,7 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <sys/ioctl.h>
-#include "ds1963s.h"
+#include "ds1963s-client.h"
 
 #define DEFAULT_SERIAL_PORT	"/dev/ttyUSB0"
 #define MODE_INFO		1

@@ -11,9 +11,9 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include "getput.h"
-#include "ds1963s.h"
 #include "ibutton/ownet.h"
 #include "ibutton/shaib.h"
+#include "ds1963s-client.h"
 
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 
