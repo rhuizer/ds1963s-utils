@@ -189,12 +189,6 @@ ds1963s_tool_sign(struct ds1963s_client *ctx, int page, size_t size)
 /*	ds1963s_client_hash_print(reply.signature); */
 }
 
-void usage(const char *progname)
-{
-	fprintf(stderr, "Use as: %s\n",
-		progname ? progname : "ds1963s-tool");
-}
-
 inline int __dehex_char(char c)
 {
 	if (c >= '0' && c <= '9')
@@ -226,21 +220,38 @@ int __dehex(uint8_t *dst, const char *src, size_t n)
 	return 0;
 }
 
+void usage(const char *progname)
+{
+	fprintf(stderr, "Usage: %s [OPTION] [DATA]\n",
+		progname ? progname : "ds1963s-tool");
+
+	fprintf(stderr, "   -d --device=pathname  the serial device used.\n");
+	fprintf(stderr, "   -i --info             print ibutton information.\n");
+	fprintf(stderr, "   -r --read=size        read 'size' bytes of data.\n");
+	fprintf(stderr, "   -t --read-auth=size   read 'size' bytes of "
+	                "authenticated data.\n");
+	fprintf(stderr, "   -s --sign-data=size   sign 'size' bytes of data.\n");
+	fprintf(stderr, "   -w --write            write data.\n");
+	fprintf(stderr, "   --write-secret=num    write data to secret "
+	                "'num'.\n");
+}
+
 static const struct option options[] =
 {
 	{ "address",		1,	NULL,	'a' },
 	{ "device",		1,	NULL,	'd' },
+	{ "help",		0,	NULL,	'h' },
 	{ "page",		1,	NULL,	'p' },
 	{ "info",		0,	NULL,	'i' },
 	{ "read",		1,	NULL,	'r' },
 	{ "read-auth",		1,	NULL,	't' },
-	{ "sign-data",		1,	NULL,	'd' },
+	{ "sign-data",		1,	NULL,	's' },
 	{ "write",		0,	NULL,	'w' },
 	{ "write-secret",	1,	NULL,	 0  },
 	{ NULL,			0,	NULL,	 0  }
 };
 
-const char optstr[] = "a:d:r:p:s:iw";
+const char optstr[] = "a:d:hr:p:s:iw";
 
 int main(int argc, char **argv)
 {
@@ -271,6 +282,9 @@ int main(int argc, char **argv)
 		case 'd':
 			device_name = optarg;
 			break;
+		case 'h':
+			usage(argv[0]);
+			exit(EXIT_SUCCESS);
 		case 'r':
 			mode = MODE_READ;
 			size = atoi(optarg);
