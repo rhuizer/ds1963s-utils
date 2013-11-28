@@ -282,8 +282,8 @@ int brutus_do_one(struct brutus *brute, int num)
 
 	/* Compare the current hmac with the target one. */
 	if (!memcmp(secret->target_hmac, reply.signature, 20)) {
-		/* We're done. */
-		if (secret->secret_idx++ == 4)
+		/* We're done if we got 4 bytes. */
+		if (secret->secret_idx++ == 3)
 			return 0;
 	} else {
 		/* Something went wrong. */
@@ -298,7 +298,7 @@ int brutus_do_one(struct brutus *brute, int num)
 /* Update the progress bar for the hardware attack. */
 int update_phase1_progress(WINDOW *w, struct brutus_secret *secret, int num)
 {
-	int piece_count, piece_size = (256 * 4) / 16;
+	int piece_count, piece_size = (256 * 3) / 16;
 	char *bar = "                ";
 
 	if (pthread_mutex_lock(&ui.mutex) != 0)
@@ -310,7 +310,7 @@ int update_phase1_progress(WINDOW *w, struct brutus_secret *secret, int num)
 	          "%.2x", secret->secret[secret->secret_idx]);
 
 	/* Print the progress bar.  It's 16 bytes wide, and we have
-	 * to update it for 256 * 8 attempts in the worst case.
+	 * to update it for 256 * 4 attempts in the worst case.
 	 */
 	piece_count = secret->secret_idx * 256 +
 	              secret->secret[secret->secret_idx];
@@ -328,7 +328,7 @@ int update_phase1_progress(WINDOW *w, struct brutus_secret *secret, int num)
 }
 
 /* Update the progress bar for the software calculation. */
-int update_phase2_progress(WINDOW *w, int num, int count)
+int update_phase2_progress(WINDOW *w, int num, uint64_t count)
 {
 	char *bar = "                ";
 	int piece_size;
@@ -336,7 +336,7 @@ int update_phase2_progress(WINDOW *w, int num, int count)
 	if (pthread_mutex_lock(&ui.mutex) != 0)
 		exit(EXIT_FAILURE);
 
-	piece_size = 0xFFFFFF / 16;
+	piece_size = 0xFFFFFFFF / 16;
 	wattron(w, A_REVERSE | COLOR_PAIR(5));
 	mvwprintw(w, num * 2 + 2, 12, "%s", &bar[16 - count / piece_size]);
 	wattroff(w, A_REVERSE);
@@ -362,9 +362,9 @@ int finalize_progress(WINDOW *w, struct brutus_secret *secret, int num)
 
 	/* Update the secret as well. */
 	wattron(w, COLOR_PAIR(3));
-	mvwprintw(w, num * 2 + 1, 22, "%.2x%.2x%.2x",
-		secret->secret[5], secret->secret[6],
-		secret->secret[7]);
+	mvwprintw(w, num * 2 + 1, 20, "%.2x%.2x%.2x%.2x",
+		secret->secret[4], secret->secret[5],
+		secret->secret[6], secret->secret[7]);
 	wrefresh(w);
 
 	if (pthread_mutex_unlock(&ui.mutex) != 0)
@@ -385,29 +385,33 @@ void *brutus_phase2_thread(void *phase2_cookie)
 	struct brutus_secret *secret = &ctx->brute->secrets[ctx->num];
 	WINDOW *w = ui.secrets;
 	int num = ctx->num;
-	int i;
+	uint64_t i;
 
-	/* Calculate the remaining 3 bytes in software. */
-	memcpy(&ctx->brute->dev.secret_memory[num * 8], secret->secret, 5);
-	for (i = 0; i < 0xFFFFFF; i++) {
-		ctx->brute->dev.secret_memory[num * 8 + 5] = (i >>  0) & 0xFF;
-		ctx->brute->dev.secret_memory[num * 8 + 6] = (i >>  8) & 0xFF;
-		ctx->brute->dev.secret_memory[num * 8 + 7] = (i >> 16) & 0xFF;
+	/* Calculate the remaining 4 bytes in software. */
+	memcpy(&ctx->brute->dev.secret_memory[num * 8], secret->secret, 4);
+	for (i = 0; i < 0xFFFFFFFF; i++) {
+		ctx->brute->dev.secret_memory[num * 8 + 4] = (i >>  0) & 0xFF;
+		ctx->brute->dev.secret_memory[num * 8 + 5] = (i >>  8) & 0xFF;
+		ctx->brute->dev.secret_memory[num * 8 + 6] = (i >> 16) & 0xFF;
+		ctx->brute->dev.secret_memory[num * 8 + 7] = (i >> 24) & 0xFF;
 
 		ds1963s_dev_read_auth_page(&ctx->brute->dev, num);
 
-		if (i % (0xFFFFFF / 16) == 0)
+		if (i % (0xFFFFFFFF / 16) == 0)
 			update_phase2_progress(w, num, i);
 
 		if (!memcmp(secret->target_hmac, &ctx->brute->dev.scratchpad[8], 20)) {
-			secret->secret[5] = (i >>  0) & 0xFF;
-			secret->secret[6] = (i >>  8) & 0xFF;
+			secret->secret[4] = (i >>  0) & 0xFF;
+			secret->secret[5] = (i >>  8) & 0xFF;
+			secret->secret[6] = (i >> 16) & 0xFF;
 			secret->secret[7] = (i >> 16) & 0xFF;
 			break;
 		}
 
 		/* We need to erase the scratchpad again, as the device has
 		 * stored the HMAC there.
+		 *
+		 * XXX: FIXME NOT THREAD SAFE
 		 */
 		memset(ctx->brute->dev.scratchpad, 0xFF, 32);
 	}
@@ -444,8 +448,6 @@ void brutus_do_secret(struct brutus *brute, int num)
 		brutus_phase2_thread,
 		phase2_cookie
 	);
-		
-//	brutus_phase2_thread(phase2_cookie);
 }
 
 void brutus_ui_destroy(void)
