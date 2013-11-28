@@ -298,7 +298,7 @@ int brutus_do_one(struct brutus *brute, int num)
 /* Update the progress bar for the hardware attack. */
 int update_phase1_progress(WINDOW *w, struct brutus_secret *secret, int num)
 {
-	int piece_count, piece_size = (256 * 3) / 16;
+	int piece_count, piece_size = (256 * 4) / 16;
 	char *bar = "                ";
 
 	if (pthread_mutex_lock(&ui.mutex) != 0)
@@ -327,6 +327,25 @@ int update_phase1_progress(WINDOW *w, struct brutus_secret *secret, int num)
 	return 0;
 }
 
+int finalize_phase1_progress(WINDOW *w, struct brutus_secret *secret, int num)
+{
+	char *bar = "                ";
+
+	if (pthread_mutex_lock(&ui.mutex) != 0)
+		exit(EXIT_FAILURE);
+
+	wattron(w, A_REVERSE | COLOR_PAIR(4));
+	mvwprintw(w, num * 2 + 2, 12, "%s", bar);
+	wattroff(w, A_REVERSE);
+	wrefresh(w);
+
+	if (pthread_mutex_unlock(&ui.mutex) != 0)
+		exit(EXIT_FAILURE);
+
+	return 0;
+}
+
+
 /* Update the progress bar for the software calculation. */
 int update_phase2_progress(WINDOW *w, int num, uint64_t count)
 {
@@ -348,7 +367,7 @@ int update_phase2_progress(WINDOW *w, int num, uint64_t count)
 	return 0;
 }
 
-int finalize_progress(WINDOW *w, struct brutus_secret *secret, int num)
+int finalize_phase2_progress(WINDOW *w, struct brutus_secret *secret, int num)
 {
 	char *bar = "                ";
 
@@ -416,7 +435,7 @@ void *brutus_phase2_thread(void *phase2_cookie)
 		memset(ctx->brute->dev.scratchpad, 0xFF, 32);
 	}
 
-	finalize_progress(w, secret, num);
+	finalize_phase2_progress(w, secret, num);
 	free(phase2_cookie);
 
 	return NULL;
@@ -429,6 +448,9 @@ void brutus_do_secret(struct brutus *brute, int num)
 	WINDOW *w = ui.secrets;
 	int ret;
 
+	/* First phase.  We attack 4 secret bytes through the partial
+	 * overwrite flaw in the DS1963S design.
+	 */
 	do {
 		update_phase1_progress(w, secret, num);
 		ret = brutus_do_one(brute, num);
@@ -436,6 +458,9 @@ void brutus_do_secret(struct brutus *brute, int num)
 
 	if (ret == -1)
 		exit(EXIT_FAILURE);
+
+	/* Finalize the phase1 progress bar. */
+	finalize_phase1_progress(w, secret, num);
 
 	/* Fire up the phase2 thread. */
 	phase2_cookie = malloc(sizeof *phase2_cookie);
