@@ -225,7 +225,14 @@ void usage(const char *progname)
 	fprintf(stderr, "Usage: %s [OPTION] [DATA]\n",
 		progname ? progname : "ds1963s-tool");
 
+	fprintf(stderr, "Modifiers can be used for several commands.\n");
+	fprintf(stderr, "   -a --address=address  the memory address used "
+	                "in several functions.\n");
+	fprintf(stderr, "   -p --page=pagenum     the page number used in "
+	                "several functions.\n");
 	fprintf(stderr, "   -d --device=pathname  the serial device used.\n");
+
+	fprintf(stderr, "\nFunction that will be performed.\n");
 	fprintf(stderr, "   -i --info             print ibutton information.\n");
 	fprintf(stderr, "   -r --read=size        read 'size' bytes of data.\n");
 	fprintf(stderr, "   -t --read-auth=size   read 'size' bytes of "
