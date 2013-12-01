@@ -7,6 +7,7 @@
  *
  * -- Ronald Huizer, 2013
  */
+#define _GNU_SOURCE
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -16,6 +17,7 @@
 #include <ncurses.h>
 #include <pthread.h>
 #include <sys/ioctl.h>
+#include <sys/time.h>
 #include "ds1963s-client.h"
 #include "ds1963s-device.h"
 #include "ibutton/ownet.h"
@@ -47,16 +49,21 @@ struct brutus
 struct brutus_interface
 {
 	WINDOW		*header;
+	WINDOW		*footer;
 	WINDOW		*serial;
 	WINDOW		*main;
 	WINDOW		*secrets;
 	int		main_rows;
 	int		main_columns;
 	pthread_mutex_t	mutex;
+	struct timeval	start;
 };
 
 /* The main brutus curses interface. */
 struct brutus_interface ui;
+
+/* Prototypes. */
+int brutus_ui_update_footer(void);
 
 int brutus_init_secret(struct brutus *brute, int secret)
 {
@@ -439,7 +446,7 @@ void *brutus_phase2_thread(void *phase2_cookie)
 			secret->secret[4] = (i >>  0) & 0xFF;
 			secret->secret[5] = (i >>  8) & 0xFF;
 			secret->secret[6] = (i >> 16) & 0xFF;
-			secret->secret[7] = (i >> 16) & 0xFF;
+			secret->secret[7] = (i >> 24) & 0xFF;
 			break;
 		}
 
@@ -457,13 +464,14 @@ void brutus_do_secret(struct brutus *brute, int num)
 	struct brutus_secret *secret = &brute->secrets[num];
 	struct phase2_cookie *phase2_cookie;
 	WINDOW *w = ui.secrets;
-	int ret;
+	int i, ret;
 
 	/* First phase.  We attack 4 secret bytes through the partial
 	 * overwrite flaw in the DS1963S design.
 	 */
 	do {
 		update_phase1_progress(w, secret, num);
+		brutus_ui_update_footer();
 		ret = brutus_do_one(brute, num);
 	} while (ret == 1);
 
@@ -498,6 +506,31 @@ static void __hmac_hex(char *buf, uint8_t hmac[20])
 
 	for (i = 0; i < 20; i++)
 		sprintf(&buf[i * 2], "%.2x", hmac[i]);
+}
+
+int brutus_ui_update_footer(void)
+{
+	int elapsed, h, m, s;
+	struct timeval t;
+
+	if (pthread_mutex_lock(&ui.mutex) != 0)
+		exit(EXIT_FAILURE);
+
+	if (gettimeofday(&t, NULL) == -1)
+		return -1;
+
+	elapsed = t.tv_sec - ui.start.tv_sec;
+	h = elapsed / 3600;
+	m = (elapsed % 3600) / 60;
+	s = (elapsed % 3600) % 60;
+
+	mvwprintw(ui.footer, 0, 15, "%.2d:%.2d:%.2d", h, m, s);
+	wrefresh(ui.footer);
+
+	if (pthread_mutex_unlock(&ui.mutex) != 0)
+		exit(EXIT_FAILURE);
+
+	return 0;
 }
 
 int brutus_ui_secrets_init(struct brutus *brute)
@@ -575,6 +608,9 @@ int brutus_ui_init(struct brutus *brute)
 	if ( (ui.header = subwin(ui.main, 1, ui.main_columns, 0, 0)) == NULL)
 		return -1;
 
+	if ( (ui.footer = subwin(ui.main, 1, ui.main_columns, ui.main_rows - 1, 0)) == NULL)
+		return -1;
+
 	if (cbreak() == ERR)
 		return -1;
 
@@ -610,13 +646,20 @@ int brutus_ui_init(struct brutus *brute)
 	if (attron(COLOR_PAIR(3)) == -1)
 		return -1;
 
-	/* Set the colors the the header window. */
+	/* Set the colors the the header and footer windows. */
 	wbkgd(ui.header, COLOR_PAIR(2));
 	wattron(ui.header, COLOR_PAIR(2));
+	wbkgd(ui.footer, COLOR_PAIR(2));
+	wattron(ui.footer, COLOR_PAIR(2));
 
 	mvwaddstr(ui.header, 0, 1, UI_BANNER_HEAD);
 	mvwaddstr(ui.header, 0, ui.main_columns - sizeof UI_BANNER_TAIL,
 	          UI_BANNER_TAIL);
+
+	mvwaddstr(ui.footer, 0, 1, "Time elapsed: 00:00:00");
+
+	if (gettimeofday(&ui.start, NULL) == -1)
+		return -1;
 
 	/* Initialize the serial sub-window. */
 	if (brutus_ui_serial_init(brute) == -1)
@@ -638,6 +681,7 @@ int brutus_ui_init(struct brutus *brute)
 int main(int argc, char **argv)
 {
 	struct brutus brute;
+	struct timespec t;
 	int i;
 
 	/* Before we initialize the UI, make sure the button is there. */
@@ -655,6 +699,16 @@ int main(int argc, char **argv)
 	/* Work our way through the eight secrets. */
 	for (i = 0; i < 8; i++)
 		brutus_do_secret(&brute, i);
+
+	/* Join all 8 threads, updating the clock. */
+	t.tv_nsec = 0;
+	t.tv_sec = 1;
+
+	for (i = 0; i < 8; i++) {
+		do {
+			brutus_ui_update_footer();
+		} while (pthread_timedjoin_np(brute.threads[i], 0, &t) != 0);
+	}
 
 	getch();
 	brutus_destroy(&brute);
