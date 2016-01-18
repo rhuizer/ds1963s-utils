@@ -464,7 +464,7 @@ void brutus_do_secret(struct brutus *brute, int num)
 	struct brutus_secret *secret = &brute->secrets[num];
 	struct phase2_cookie *phase2_cookie;
 	WINDOW *w = ui.secrets;
-	int i, ret;
+	int ret;
 
 	/* First phase.  We attack 4 secret bytes through the partial
 	 * overwrite flaw in the DS1963S design.
@@ -579,7 +579,7 @@ int brutus_ui_serial_init(struct brutus *brute)
 		return -1;
 
 	waddstr(w, "DS1963S found with serial number: ");
-	for (i = 0; i < sizeof brute->dev[0].serial; i++)
+	for (i = sizeof(brute->dev[0].serial) - 1; i >= 0; i--)
 		wprintw(w, "%.2x", brute->dev[0].serial[i]);
 
 	wrefresh(w);

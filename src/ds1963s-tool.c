@@ -59,7 +59,8 @@ void ds1963s_tool_info(struct ds1963s_client *ctx)
 		printf("Family: 0x%.2x\n", rom.family);
 		printf("Serial: ");
 
-		for (i = 0; i < sizeof(rom.serial); i++)
+		/* Serial number holds LSB first, so process backwards. */
+		for (i = sizeof(rom.serial) - 1; i >= 0; i--)
 			printf("%.2x", rom.serial[i]);
 		printf("\nCRC8  : 0x%.2x\n", rom.crc);
 	}
