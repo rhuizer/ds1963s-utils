@@ -23,8 +23,20 @@ struct ds1963s_device
 	uint8_t		CHLG:1;
 	uint8_t		AUTH:1;
 	uint8_t		MATCH:1;
+
+	uint8_t		ES;
 };
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void ds1963s_dev_erase_scratchpad(struct ds1963s_device *ds1963s, int address);
 void ds1963s_dev_read_auth_page(struct ds1963s_device *ds1963s, int page);
+void ds1963s_dev_sign_data_page(struct ds1963s_device *ds1963s);
+
+#ifdef __cplusplus
+};
+#endif
 
 #endif

@@ -4,8 +4,9 @@
  *
  * Dedicated to Yuzuyu Arielle Huizer.
  *
- * -- Ronald Huizer / r.huizer@xs4all.nl / 2013
+ * -- Ronald Huizer / r.huizer@xs4all.nl / 2013-2016
  */
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -116,6 +117,54 @@ static void __sha1_get_output_1(uint8_t SP[32], uint32_t A, uint32_t B,
 	SP[27] = (A >> 24) & 0xFF;
 }
 
+void ds1963s_dev_erase_scratchpad(struct ds1963s_device *ds1963s, int address)
+{
+	assert(ds1963s != NULL);
+	assert(address >= 0 && address <= 65536);
+
+	ds1963s->CHLG = 0;
+	ds1963s->AUTH = 0;
+	ds1963s->TA1  = address & 0xFF;
+	ds1963s->TA2  = (address >> 8) & 0xFF;
+
+	memset(ds1963s->scratchpad, 0xFF, sizeof ds1963s->scratchpad);
+
+	ds1963s->HIDE = 0;
+}
+
+void ds1963s_dev_write_scratchpad(
+	struct ds1963s_device *ds1963s,
+	int address,
+	const unsigned char *data,
+	size_t len
+) {
+	assert(ds1963s != NULL);
+	assert(address >= 0 && address <= 65536);
+	assert(data != NULL);
+
+	ds1963s->CHLG = 0;
+	ds1963s->AUTH = 0;
+	ds1963s->TA1  = address & 0xFF;
+	ds1963s->TA2  = (address >> 8) & 0xFF;
+
+	if (ds1963s->HIDE == 1) {
+		/* XXX: test for secret address. */
+
+		/* PF := 0; AA := 0 */
+		ds1963s->ES &= 0x5F;
+
+		/* T2:T0 := 0,0,0 */
+		ds1963s->TA1 &= 0xF8;
+
+		/* E4:E0 := T4, T3, 0, 0, 0 */
+		ds1963s->ES &= 0xE0;                /* E4:E0 := 0,0,0,0,0 */
+		ds1963s->ES |= ds1963s->TA1 & 0x1F; /* E4:E0 := T4:T0     */
+		ds1963s->ES |= 0x07;                /* E2:E0 := 1,1,1     */
+	} else {
+
+	}
+}
+
 void ds1963s_dev_read_auth_page(struct ds1963s_device *ds1963s, int page)
 {
 	uint8_t M[64];
@@ -161,7 +210,41 @@ void ds1963s_dev_read_auth_page(struct ds1963s_device *ds1963s, int page)
 	);
 }
 
-void ds1963s_sign_page(struct ds1963s_device *ds1963s)
+int ds1963s_dev_compute_sha(struct ds1963s_device *ds1963s, int control)
+{
+	assert(ds1963s != NULL);
+
+	switch (control) {
+	case 0x0F:
+		/* compute first secret */
+		break;
+	case 0xF0:
+		/* compute next secret */
+		break;
+	case 0x3C:
+		/* validate data page */
+		break;
+	case 0xC3:
+		ds1963s_dev_sign_data_page(ds1963s);
+		break;
+	case 0xCC:
+		/* compute challenge */
+		break;
+	case 0xAA:
+		/* authenticate host */
+		break;
+	default:
+		return -1;
+	}
+
+	return 0;
+}
+
+/* There is no page argument as this function only works on page 0 and 8.
+ * These pages are aliased, with page-8 being the write-cycle-counter
+ * updating version of page 0.  As there are no writes this is irrelevant.
+ */
+void ds1963s_dev_sign_data_page(struct ds1963s_device *ds1963s)
 {
 	uint8_t M[64];
 	SHA1_CTX ctx;
