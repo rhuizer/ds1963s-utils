@@ -2,6 +2,7 @@
 #define __DS1963S_CLIENT_H
 
 #include "ibutton/shaib.h"
+#include "ds1963s-error.h"
 
 #define DS1963S_PAGE_SIZE		32
 #define DS1963S_SCRATCHPAD_SIZE		32

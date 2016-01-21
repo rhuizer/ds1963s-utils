@@ -14,6 +14,8 @@
 #include "ibutton/ownet.h"
 #include "ibutton/shaib.h"
 #include "ds1963s-client.h"
+#include "ds1963s-error.h"
+#include "onewire.h"
 
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 
@@ -24,11 +26,11 @@ int ds1963s_client_init(struct ds1963s_client *ctx, const char *device)
 	SHACopr *copr = &ctx->copr;
 
 	/* Get port. */
-	if ( (copr->portnum = owAcquireEx(device)) == -1)
+	if ( (copr->portnum = onewire_acquire(device)) == -1)
 		return -1;
 
 	/* Find DS1963S iButton. */
-	if (FindNewSHA(copr->portnum, copr->devAN, TRUE) == FALSE)
+	if (onewire_ibutton_sha_find(copr->portnum, copr->devAN) == -1)
 		return -1;
 
 	ctx->resume = 0;
@@ -53,9 +55,10 @@ int ds1963s_client_page_to_address(int page)
 
 int ds1963s_client_address_to_page(int address)
 {
-	/* XXX: set error. */
-	if (address < 0 || address > 0x2c0)
+	if (address < 0 || address > 0x2c0) {
+		ds1963s_errno = DS1963S_ERROR_INVALID_ADDRESS;
 		return -1;
+	}
 
 	return address / 32;
 }
@@ -481,8 +484,10 @@ int ds1963s_client_hide_set(struct ds1963s_client *ctx)
 {
 	int status = 0;
 
-	if (ioctl(fd[ctx->copr.portnum], TIOCMSET, &status) == -1)
+	if (ioctl(fd[ctx->copr.portnum], TIOCMSET, &status) == -1) {
+		ds1963s_errno = DS1963S_ERROR_SET_CONTROL_BITS;
 		return -1;
+	}
 
 	/* XXX: unclear how long we should sleep for a power-on-reset. */
 	sleep(1);
@@ -490,13 +495,13 @@ int ds1963s_client_hide_set(struct ds1963s_client *ctx)
 	/* Release and reacquire the port. */
 	owRelease(ctx->copr.portnum);
 
-        if ( (ctx->copr.portnum = owAcquireEx(ctx->device_path)) == -1)
+        if ( (ctx->copr.portnum = onewire_acquire(ctx->device_path)) == -1)
 		return -1;
 
 	/* Find the DS1963S iButton again, as we've lost it after a
 	 * return to probe condition.
 	 */
-	if (FindNewSHA(ctx->copr.portnum, ctx->copr.devAN, TRUE) == FALSE)
+	if (onewire_ibutton_sha_find(ctx->copr.portnum, ctx->copr.devAN) == -1)
 		return -1;
 
 	return 0;

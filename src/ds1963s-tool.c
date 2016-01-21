@@ -347,7 +347,7 @@ int main(int argc, char **argv)
 
 	/* Initialize the DS1963S device. */
 	if (ds1963s_client_init(&ctx, device_name) == -1) {
-		ibutton_perror("ds1963s_init()");
+		ds1963s_perror("ds1963s_init()");
 		exit(EXIT_FAILURE);
 	}
 
