@@ -39,7 +39,7 @@ struct brutus
 {
 	int			log_fd;
 	struct ds1963s_client	ctx;
-	struct ds1963s_device	dev[8];
+	struct ds1963s_device	dev;
 	struct brutus_secret	secrets[8];
 };
 
@@ -73,32 +73,18 @@ int brutus_init_device(struct brutus *brute)
 	}
 
 	/* Initialize the software DS1963S implementation. */
-	memset(&brute->dev[0], 0, sizeof brute->dev[0]);
-	brute->dev[0].family = rom.family;
-	memcpy(brute->dev[0].serial, rom.serial, 6);
-	memset(brute->dev[0].scratchpad, 0xFF,
-	       sizeof brute->dev[0].scratchpad);
-	memcpy(brute->dev[0].data_memory, buf, sizeof buf);
+	memset(&brute->dev, 0, sizeof brute->dev);
+	brute->dev.family = rom.family;
+	memcpy(brute->dev.serial, rom.serial, 6);
+	memset(brute->dev.scratchpad, 0xFF,
+	       sizeof brute->dev.scratchpad);
+	memcpy(brute->dev.data_memory, buf, sizeof buf);
 
 	/* Initialize the write cycle counters. */
 	for (i = 0; i < 8; i++) {
-		brute->dev[0].data_wc[i]   = counters[i];
-		brute->dev[0].secret_wc[i] = counters[i + 8];
+		brute->dev.data_wc[i]   = counters[i];
+		brute->dev.secret_wc[i] = counters[i + 8];
 	}
-
-	return 0;
-}
-
-int brutus_init_devices(struct brutus *brute)
-{
-	int i;
-
-	if (brutus_init_device(brute) == -1)
-		return -1;
-
-	/* A shallow copy suffices for ds1963s_device structures. */
-	for (i = 1; i < 8; i++)
-		memcpy(&brute->dev[i], &brute->dev[0], sizeof brute->dev[0]);
 
 	return 0;
 }
@@ -111,9 +97,9 @@ void brutus_transaction_log_init(struct brutus *brute)
 	snprintf(filename,
 	         sizeof filename,
 	         ".brutus-%.2x%.2x%.2x%.2x%.2x%.2x",
-	         brute->dev[0].serial[5], brute->dev[0].serial[4],
-	         brute->dev[0].serial[3], brute->dev[0].serial[2],
-	         brute->dev[0].serial[1], brute->dev[0].serial[0]
+	         brute->dev.serial[5], brute->dev.serial[4],
+	         brute->dev.serial[3], brute->dev.serial[2],
+	         brute->dev.serial[1], brute->dev.serial[0]
 	);
 
 	if ( (fd = open(filename, O_RDWR | O_CREAT | O_EXCL, 0600)) == -1) {
@@ -153,7 +139,7 @@ int brutus_init(struct brutus *brute)
 		return -1;
 
 	/* Initialize the software implementation of the DS1963S. */
-	if (brutus_init_devices(brute) == -1) {
+	if (brutus_init_device(brute) == -1) {
 		ds1963s_client_destroy(&brute->ctx);
 		return -1;
 	}
@@ -277,8 +263,8 @@ static void __hmac_hex(char *buf, uint8_t hmac[20])
 }
 #endif
 
-//	for (i = sizeof(brute->dev[0].serial) - 1; i >= 0; i--)
-//		wprintw(w, "%.2x", brute->dev[0].serial[i]);
+//	for (i = sizeof(brute->dev.serial) - 1; i >= 0; i--)
+//		wprintw(w, "%.2x", brute->dev.serial[i]);
 
 int brutus_secret_hmac_target_get(struct brutus *brute, int secret, int link)
 {
@@ -324,7 +310,7 @@ int brutus_secret_hmac_target_get(struct brutus *brute, int secret, int link)
 void *brutus_brute_link(struct brutus *brute, int secret, int link)
 {
 	struct brutus_secret *secret_state = &brute->secrets[secret];
-	struct ds1963s_device *dev = &brute->dev[secret];
+	struct ds1963s_device *dev = &brute->dev;
 	int i;
 
 	assert(brute != NULL);
