@@ -4,7 +4,7 @@
  *
  * Dedicated to Yuzuyu Arielle Huizer.
  *
- *  -- Ronald Huizer, 2013
+ *  -- Ronald Huizer, (C) 2013-2016
  */
 #include <ctype.h>
 #include <stdio.h>
@@ -15,6 +15,7 @@
 #include <getopt.h>
 #include <sys/ioctl.h>
 #include "ds1963s-client.h"
+#include "ds1963s-device.h"
 
 #define DEFAULT_SERIAL_PORT	"/dev/ttyUSB0"
 #define MODE_INFO		1
@@ -23,6 +24,36 @@
 #define MODE_WRITE		8
 #define MODE_SIGN		16
 #define MODE_WRITE_SECRET	32
+#define MODE_INFO_FULL		64
+
+struct ds1963s_brute_secret
+{
+	int		state;
+	uint8_t		target_hmac[4][20];
+	uint8_t		secret[8];
+};
+
+struct ds1963s_brute
+{
+	int				log_fd;
+	struct ds1963s_client		client;
+	struct ds1963s_device		dev;
+	struct ds1963s_brute_secret	secrets[8];
+};
+
+struct ds1963s_tool
+{
+	/* Client for communication with a DS1963S ibutton. */
+	struct ds1963s_client *client;
+
+	/* Side-channel module used for dumping secrets. */
+	struct ds1963s_brute brute;
+};
+
+void ds1963s_tool_init(struct ds1963s_tool *tool)
+{
+	memset(tool, 0, sizeof *tool);
+}
 
 void ds1963s_tool_fatal(struct ds1963s_client *ctx)
 {
@@ -47,44 +78,88 @@ void ds1963s_tool_memory_dump(struct ds1963s_client *ctx)
 	}
 }
 
+void ds1963s_tool_rom_print(struct ds1963s_rom *rom)
+{
+	int i;
+
+	printf("64-BIT LASERED ROM\n");
+	printf("------------------\n");
+	printf("Family: 0x%.2x\n", rom->family);
+	printf("Serial: ");
+
+	/* Serial number holds LSB first, so process backwards. */
+	for (i = sizeof(rom->serial) - 1; i >= 0; i--)
+		printf("%.2x", rom->serial[i]);
+	printf("\nCRC8  : 0x%.2x\n", rom->crc);
+}
+
+void ds1963s_tool_write_cycle_counters_print(uint32_t counters[16])
+{
+	printf("\nWrite cycle counter states\n");
+	printf("--------------------------\n");
+	printf("Data page  8: 0x%.8x\n", counters[0]);
+	printf("Data page  9: 0x%.8x\n", counters[1]);
+	printf("Data page 10: 0x%.8x\n", counters[2]);
+	printf("Data page 11: 0x%.8x\n", counters[3]);
+	printf("Data page 12: 0x%.8x\n", counters[4]);
+	printf("Data page 13: 0x%.8x\n", counters[5]);
+	printf("Data page 14: 0x%.8x\n", counters[6]);
+	printf("Data page 15: 0x%.8x\n", counters[7]);
+	printf("Secret     0: 0x%.8x\n", counters[8]);
+	printf("Secret     1: 0x%.8x\n", counters[9]);
+	printf("Secret     2: 0x%.8x\n", counters[10]);
+	printf("Secret     3: 0x%.8x\n", counters[11]);
+	printf("Secret     4: 0x%.8x\n", counters[12]);
+	printf("Secret     5: 0x%.8x\n", counters[13]);
+	printf("Secret     6: 0x%.8x\n", counters[14]);
+	printf("Secret     7: 0x%.8x\n", counters[15]);
+}
+
 void ds1963s_tool_info(struct ds1963s_client *ctx)
 {
 	struct ds1963s_rom rom;
 	uint32_t counters[16];
-	int i;
 
-	if (ds1963s_client_rom_get(ctx, &rom) != -1) {
-		printf("64-BIT LASERED ROM\n");
-		printf("------------------\n");
-		printf("Family: 0x%.2x\n", rom.family);
-		printf("Serial: ");
+	if (ds1963s_client_rom_get(ctx, &rom) != -1)
+		ds1963s_tool_rom_print(&rom);
 
-		/* Serial number holds LSB first, so process backwards. */
-		for (i = sizeof(rom.serial) - 1; i >= 0; i--)
-			printf("%.2x", rom.serial[i]);
-		printf("\nCRC8  : 0x%.2x\n", rom.crc);
-	}
+	if (ds1963s_write_cycle_get_all(ctx, counters) != -1)
+		ds1963s_tool_write_cycle_counters_print(counters);
 
-	if (ds1963s_write_cycle_get_all(ctx, counters) != -1) {
-		printf("\nWrite cycle counter states\n");
-		printf("--------------------------\n");
-		printf("Data page  8: 0x%.8x\n", counters[0]);
-		printf("Data page  9: 0x%.8x\n", counters[1]);
-		printf("Data page 10: 0x%.8x\n", counters[2]);
-		printf("Data page 11: 0x%.8x\n", counters[3]);
-		printf("Data page 12: 0x%.8x\n", counters[4]);
-		printf("Data page 13: 0x%.8x\n", counters[5]);
-		printf("Data page 14: 0x%.8x\n", counters[6]);
-		printf("Data page 15: 0x%.8x\n", counters[7]);
-		printf("Secret     0: 0x%.8x\n", counters[8]);
-		printf("Secret     1: 0x%.8x\n", counters[9]);
-		printf("Secret     2: 0x%.8x\n", counters[10]);
-		printf("Secret     3: 0x%.8x\n", counters[11]);
-		printf("Secret     4: 0x%.8x\n", counters[12]);
-		printf("Secret     5: 0x%.8x\n", counters[13]);
-		printf("Secret     6: 0x%.8x\n", counters[14]);
-		printf("Secret     7: 0x%.8x\n", counters[15]);
-	}
+	printf("\n4096-bit NVRAM dump\n");
+	printf("-------------------\n");
+	ds1963s_tool_memory_dump(ctx);
+
+	printf("\nPRNG Counter: 0x%.8x\n", ds1963s_client_prng_get(ctx));
+}
+
+int ds1963s_tool_info_full_disclaimer(void)
+{
+	int ch;
+
+	fprintf(stderr, "WARNING: This operation will perform partial "
+	                "writes to the DS1963S secrets.\n");
+	fprintf(stderr, "         Failure may cause the dongle secrets to be "
+	                "lost forever.\n\n");
+	fprintf(stderr, "Do you wish to proceed? (y/n) ");
+
+	ch = fgetc(stdin);
+	return ch == 'y' || ch == 'Y';
+}
+
+void ds1963s_tool_info_full(struct ds1963s_client *ctx)
+{
+	struct ds1963s_rom rom;
+	uint32_t counters[16];
+
+	if (ds1963s_tool_info_full_disclaimer() == 0)
+		return;
+
+	if (ds1963s_client_rom_get(ctx, &rom) != -1)
+		ds1963s_tool_rom_print(&rom);
+
+	if (ds1963s_write_cycle_get_all(ctx, counters) != -1)
+		ds1963s_tool_write_cycle_counters_print(counters);
 
 	printf("\n4096-bit NVRAM dump\n");
 	printf("-------------------\n");
@@ -97,7 +172,7 @@ void ds1963s_tool_write(struct ds1963s_client *ctx, uint16_t address,
                         const uint8_t *data, size_t len)
 {
 	if (ds1963s_client_memory_write(ctx, address, data, len) == -1) {
-		ibutton_perror("ds1963s_client_memory_write()");
+		ds1963s_client_perror(ctx, "ds1963s_client_memory_write()");
 		ds1963s_tool_fatal(ctx);
 	}
 }
@@ -106,7 +181,7 @@ void ds1963s_tool_secret_write(struct ds1963s_client *ctx, int secret,
                                const uint8_t *data, size_t len)
 {
 	if (ds1963s_client_secret_write(ctx, secret, data, len) == -1) {
-		ibutton_perror("ds1963s_client_secret_write()");
+		ds1963s_client_perror(ctx, "ds1963s_client_secret_write()");
 		ds1963s_tool_fatal(ctx);
 	}
 }
@@ -114,20 +189,20 @@ void ds1963s_tool_secret_write(struct ds1963s_client *ctx, int secret,
 void
 ds1963s_tool_read(struct ds1963s_client *ctx, uint16_t address, size_t size)
 {
-	int portnum = ctx->copr.portnum;
 	uint8_t data[32];
 	size_t i;
 
-        EraseScratchpadSHA18(portnum, 0xFFFF, FALSE);
-
-	ds1963s_client_taes_print(ctx);
+	if (ds1963s_client_scratchpad_erase(ctx) == -1) {
+		ds1963s_client_perror(ctx,
+			"ds1963s_client_scratchpad_erase()");
+		ds1963s_tool_fatal(ctx);
+	}
 
 	/* Will not read more than 32 bytes. */
 	if (ds1963s_client_memory_read(ctx, address, data, size) == -1) {
-		ibutton_perror("ds1963s_client_memory_read()");
+		ds1963s_client_perror(ctx, "ds1963s_client_memory_read()");
 		ds1963s_tool_fatal(ctx);
 	}
-	ds1963s_client_taes_print(ctx);
 
 	for (i = 0; i < size; i++)
 		printf("%c", data[i]);
@@ -136,20 +211,24 @@ ds1963s_tool_read(struct ds1963s_client *ctx, uint16_t address, size_t size)
 void
 ds1963s_tool_read_auth(struct ds1963s_client *ctx, int page, size_t size)
 {
-	int addr = ds1963s_client_page_to_address(page);
 	struct ds1963s_read_auth_page_reply reply;
-	int portnum = ctx->copr.portnum;
+	int addr;
 	int i;
 
-        /* Erase the scratchpad to clear the HIDE flag. */
-        if (EraseScratchpadSHA18(portnum, 0, FALSE) == FALSE) {
-		fprintf(stderr, "EraseScratchpadSHA18 failed\n");
-		exit(EXIT_FAILURE);
+	if ( (addr = ds1963s_client_page_to_address(ctx, page)) == -1) {
+		ds1963s_client_perror(ctx, "ds1963s_client_page_to_address()");
+		ds1963s_tool_fatal(ctx);
+	}
+
+	if (ds1963s_client_scratchpad_erase(ctx) == -1) {
+		ds1963s_client_perror(ctx,
+			"ds1963s_client_scratchpad_erase()");
+		ds1963s_tool_fatal(ctx);
 	}
 
 	if (ds1963s_client_read_auth(ctx, addr, &reply, 0) == -1) {
-		ibutton_perror("ds1963s_client_read_auth()");
-		exit(EXIT_FAILURE);
+		ds1963s_client_perror(ctx, "ds1963s_client_read_auth()");
+		ds1963s_tool_fatal(ctx);
 	}
 
 	printf("Read authenticated page #%.2d\n", page);
@@ -170,24 +249,33 @@ ds1963s_tool_read_auth(struct ds1963s_client *ctx, int page, size_t size)
 void
 ds1963s_tool_sign(struct ds1963s_client *ctx, int page, size_t size)
 {
-	int addr = ds1963s_client_page_to_address(page);
-	int portnum = ctx->copr.portnum;
+	unsigned char hash[20];
+	int addr;
 
-        /* Erase the scratchpad to clear the HIDE flag. */
-        if (EraseScratchpadSHA18(portnum, 0, FALSE) == FALSE) {
-		fprintf(stderr, "EraseScratchpadSHA18 failed\n");
-		exit(EXIT_FAILURE);
+	if ( (addr = ds1963s_client_page_to_address(ctx, page)) == -1) {
+		ds1963s_client_perror(ctx, NULL);
+		ds1963s_tool_fatal(ctx);
 	}
 
-	if (ds1963s_client_sign_data(ctx, addr) == -1) {
-		ibutton_perror("ds1963s_client_sign_data()");
-		exit(EXIT_FAILURE);
+	/* XXX: signing happens over scratchpad data.  We may not want
+	 * to clear this here but rather let the state persist.
+	 */
+        /* Erase the scratchpad to clear the HIDE flag. */
+	if (ds1963s_client_scratchpad_erase(ctx) == -1) {
+		ds1963s_client_perror(ctx,
+			"ds1963s_client_scratchpad_erase()");
+		ds1963s_tool_fatal(ctx);
+	}
+
+	if (ds1963s_client_sign_data(ctx, addr, hash) == -1) {
+		ds1963s_client_perror(ctx, "ds1963s_client_sign_data()");
+		ds1963s_tool_fatal(ctx);
 	}
 
 	printf("Sign data page #%.2d\n", page);
 	printf("---------------------------\n");
-	printf("SHA1 hash                 : ");
-/*	ds1963s_client_hash_print(reply.signature); */
+	printf("SHA1 hash: ");
+	ds1963s_client_hash_print(hash);
 }
 
 inline int __dehex_char(char c)
@@ -235,6 +323,7 @@ void usage(const char *progname)
 
 	fprintf(stderr, "\nFunction that will be performed.\n");
 	fprintf(stderr, "   -i --info             print ibutton information.\n");
+	fprintf(stderr, "   -f --info-full        print full ibutton information.\n");
 	fprintf(stderr, "   -r --read=size        read 'size' bytes of data.\n");
 	fprintf(stderr, "   -t --read-auth=size   read 'size' bytes of "
 	                "authenticated data.\n");
@@ -251,6 +340,7 @@ static const struct option options[] =
 	{ "help",		0,	NULL,	'h' },
 	{ "page",		1,	NULL,	'p' },
 	{ "info",		0,	NULL,	'i' },
+	{ "info-full",		0,	NULL,	'f' },
 	{ "read",		1,	NULL,	'r' },
 	{ "read-auth",		1,	NULL,	't' },
 	{ "sign-data",		1,	NULL,	's' },
@@ -259,7 +349,7 @@ static const struct option options[] =
 	{ NULL,			0,	NULL,	 0  }
 };
 
-const char optstr[] = "a:d:hr:p:s:iw";
+const char optstr[] = "a:d:hr:p:s:ifw";
 
 int main(int argc, char **argv)
 {
@@ -285,7 +375,11 @@ int main(int argc, char **argv)
 			break;
 		case 'a':
 			address = atoi(optarg);
-			page = ds1963s_client_address_to_page(address);
+			page = ds1963s_client_address_to_page(&ctx, address);
+			if (page == -1) {
+				ds1963s_client_perror(&ctx, "");
+				exit(EXIT_FAILURE);
+			}
 			break;
 		case 'd':
 			device_name = optarg;
@@ -299,13 +393,20 @@ int main(int argc, char **argv)
 			break;
 		case 'p':
 			page = atoi(optarg);
-			address = ds1963s_client_page_to_address(page);
+			address = ds1963s_client_page_to_address(&ctx, page);
+			if (address == -1) {
+				ds1963s_client_perror(&ctx, "");
+				exit(EXIT_FAILURE);
+			}
 			break;
 		case 's':
 			mode = MODE_SIGN;
 			break;
 		case 'i':
 			mode = MODE_INFO;
+			break;
+		case 'f':
+			mode = MODE_INFO_FULL;
 			break;
 		case 't':
 			mode = MODE_READ_AUTH;
@@ -347,13 +448,16 @@ int main(int argc, char **argv)
 
 	/* Initialize the DS1963S device. */
 	if (ds1963s_client_init(&ctx, device_name) == -1) {
-		ds1963s_perror("ds1963s_init()");
+		ds1963s_client_perror(&ctx, "ds1963s_init()");
 		exit(EXIT_FAILURE);
 	}
 
 	switch (mode) {
 	case MODE_INFO:
 		ds1963s_tool_info(&ctx);
+		break;
+	case MODE_INFO_FULL:
+		ds1963s_tool_info_full(&ctx);
 		break;
 	case MODE_READ:
 		ds1963s_tool_read(&ctx, address, size);

@@ -11,30 +11,73 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include "getput.h"
+#include "ibutton/ds2480.h"
 #include "ibutton/ownet.h"
 #include "ibutton/shaib.h"
 #include "ds1963s-client.h"
 #include "ds1963s-error.h"
-#include "onewire.h"
 
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 
 extern int fd[MAX_PORTNUM];
+void owClearError(void);
+
+static int __ds1963s_acquire(struct ds1963s_client *ctx, const char *port)
+{
+	int portnum;
+
+	if ( (portnum = OpenCOMEx(port)) < 0) {
+		ctx->errno = DS1963S_ERROR_OPENCOM;
+		return -1;
+	}
+
+	if (!DS2480Detect(portnum)) {
+		CloseCOM(portnum);
+		ctx->errno = DS1963S_ERROR_NO_DS2480;
+		return -1;
+	}
+
+	return portnum;
+}
+
+static int
+__ds1963s_find(struct ds1963s_client *ctx, int portnum, unsigned char *devAN)
+{
+	/* XXX: FindNewSHA can return FALSE without adding an error to the
+	 * error stack (when it does not find any buttons).  We need to
+	 * differentiate.
+	 */
+	owClearError();
+
+	if (FindNewSHA(portnum, devAN, TRUE) == TRUE)
+		return 0;
+
+	/* XXX: this is dependent on FindNewSHA internals. */
+	if (owHasErrors()) {
+		ctx->errno = DS1963S_ERROR_SET_LEVEL;
+		return -1;
+	}
+
+	/* We did not find any new SHA based ibuttons. */
+	ctx->errno = DS1963S_ERROR_NOT_FOUND;
+	return -1;
+}
 
 int ds1963s_client_init(struct ds1963s_client *ctx, const char *device)
 {
 	SHACopr *copr = &ctx->copr;
 
 	/* Get port. */
-	if ( (copr->portnum = onewire_acquire(device)) == -1)
+	if ( (copr->portnum = __ds1963s_acquire(ctx, device)) == -1)
 		return -1;
 
 	/* Find DS1963S iButton. */
-	if (onewire_ibutton_sha_find(copr->portnum, copr->devAN) == -1)
+	if (__ds1963s_find(ctx, copr->portnum, copr->devAN) == -1)
 		return -1;
 
-	ctx->resume = 0;
+	ctx->resume      = 0;
 	ctx->device_path = device;
+	ctx->errno       = 0;
 
 	return 0;
 }
@@ -44,19 +87,30 @@ void ds1963s_client_destroy(struct ds1963s_client *ctx)
 	owRelease(ctx->copr.portnum);
 }
 
-int ds1963s_client_page_to_address(int page)
+static inline int __ds1963s_client_select_sha(struct ds1963s_client *ctx)
 {
-	/* XXX: set error. */
-	if (page < 0 || page > 21)
+	if (SelectSHA(ctx->copr.portnum) == FALSE) {
+		ctx->errno = DS1963S_ERROR_ACCESS;
 		return -1;
+        }
+
+	return 0;
+}
+
+int ds1963s_client_page_to_address(struct ds1963s_client *ctx, int page)
+{
+	if (page < 0 || page > 21) {
+		ctx->errno = DS1963S_ERROR_INVALID_PAGE;
+		return -1;
+	}
 
 	return page * 32;
 }
 
-int ds1963s_client_address_to_page(int address)
+int ds1963s_client_address_to_page(struct ds1963s_client *ctx, int address)
 {
 	if (address < 0 || address > 0x2c0) {
-		ds1963s_errno = DS1963S_ERROR_INVALID_ADDRESS;
+		ctx->errno = DS1963S_ERROR_INVALID_ADDRESS;
 		return -1;
 	}
 
@@ -136,8 +190,8 @@ ds1963s_scratchpad_read_resume(struct ds1963s_client *ctx, uint8_t *dst,
 
 	if (resume)
 		buf[i++] = ROM_CMD_RESUME;
-	else
-		OWASSERT(SelectSHA(portnum), OWERROR_ACCESS_FAILED, -1);
+	else if (__ds1963s_client_select_sha(ctx) == -1)
+		return -1;
 
 	buf[i++] = CMD_READ_SCRATCHPAD;
 
@@ -180,8 +234,8 @@ int ds1963s_client_read_auth(struct ds1963s_client *ctx, int address,
 
 	if (resume)
 		buf[i++] = ROM_CMD_RESUME;
-	else
-		OWASSERT(SelectSHA(portnum), OWERROR_ACCESS_FAILED, -1);
+	else if (__ds1963s_client_select_sha(ctx) == -1)
+		return -1;
 
 	/* XXX: study how overdrive works. */
 	num_verf = (in_overdrive[portnum&0x0FF]) ? 10 : 2;
@@ -231,24 +285,20 @@ int ds1963s_client_read_auth(struct ds1963s_client *ctx, int address,
 	return 0;
 }
 
-int ds1963s_client_sign_data(struct ds1963s_client *ctx, int address)
+int ds1963s_client_sign_data(
+	struct ds1963s_client *ctx,
+	int address,
+	unsigned char hash[20])
 {
 	int portnum = ctx->copr.portnum;
 	uint8_t scratchpad[32];
 	int i;
 
+	SHAFunction18(portnum, 0xC3, address, 0);
 	ReadScratchpadSHA18(portnum, 0, 0, scratchpad, 0);
 
-	for (i = 0; i < 32; i++)
-		printf("%.2x", scratchpad[i]);
-	printf("\n");
-
-	SHAFunction18(portnum, 0xC3, 0, 0);
-	ReadScratchpadSHA18(portnum, 0, 0, scratchpad, 0);
-
-	for (i = 0; i < 32; i++)
-		printf("%.2x", scratchpad[i]);
-	printf("\n");
+	for (i = 0; i < 20; i++)
+		hash[i] = scratchpad[i + 8];
 
 	return 0;
 }
@@ -292,6 +342,19 @@ int ibutton_secret_zero(int portnum, int pagenum, int secretnum, int resume)
 
 #endif
 
+int ds1963s_client_scratchpad_erase(struct ds1963s_client *ctx)
+{
+	int portnum = ctx->copr.portnum;
+
+	/* Erase the scratchpad to clear the HIDE flag. */
+	if (EraseScratchpadSHA18(portnum, 0, FALSE) == FALSE) {
+		ctx->errno = DS1963S_ERROR_SP_ERASE;
+		return -1;
+	}
+
+	return 0;
+}
+
 int
 ds1963s_scratchpad_write(struct ds1963s_client *ctx, uint16_t address,
                          const uint8_t *data, size_t len)
@@ -308,13 +371,15 @@ ds1963s_scratchpad_write_resume(struct ds1963s_client *ctx, uint16_t address,
 	int i = 0;
 
 	/* Make sure the data we provide fits. */
-	if (len > 32)
+	if (len > 32) {
+		ctx->errno = DS1963S_ERROR_DATA_LEN;
 		return -1;
+	}
 
-	if (ctx->resume)
+	if (ctx->resume) {
 		buf[i++] = ROM_CMD_RESUME;
-	else 
-		OWASSERT(SelectSHA(portnum), OWERROR_ACCESS_FAILED, -1);
+	} else if (__ds1963s_client_select_sha(ctx) == -1)
+		return -1;
 
 	/* write scratchpad command */
 	buf[i++] = CMD_WRITE_SCRATCHPAD;
@@ -325,7 +390,11 @@ ds1963s_scratchpad_write_resume(struct ds1963s_client *ctx, uint16_t address,
 	/* payload */
 	memcpy(buf + i, data, len);
 
-	OWASSERT(owBlock(portnum, 0, buf, len + i), OWERROR_BLOCK_FAILED, -1);
+	if (owBlock(portnum, 0, buf, len + i) == FALSE) {
+		ctx->errno = DS1963S_ERROR_TX_BLOCK;
+		return -1;
+	}
+
 	owTouchReset(portnum);
 
 	return 0;
@@ -341,7 +410,8 @@ int ds1963s_client_memory_read(struct ds1963s_client *ctx, uint16_t address,
 	if (size > sizeof(block) - 3)
 		return -1;
 
-	OWASSERT(SelectSHA(portnum), OWERROR_ACCESS_FAILED, -1);
+	if (__ds1963s_client_select_sha(ctx) == -1)
+		return -1;
 
 	memset(block, 0xff, sizeof block);
 	/* write scratchpad command */
@@ -367,13 +437,14 @@ int ds1963s_client_memory_write(struct ds1963s_client *ctx, uint16_t address,
 	int addr_buff;
 	int ret;
 
-	/* XXX: set error. */
-	if (size > 32)
+	if (size > 32) {
+		ctx->errno = DS1963S_ERROR_DATA_LEN;
 		return -1;
+	}
 
 	/* Erase the scratchpad to clear the HIDE flag. */
-	OWASSERT(EraseScratchpadSHA18(portnum, address, FALSE),
-	         OWERROR_ERASE_SCRATCHPAD_FAILED, -1);
+	if (ds1963s_client_scratchpad_erase(ctx) == -1)
+		return -1;
 
 	/* Write the provided data to the scratchpad.  This will also latch in
  	 * TA1 and TA2, which are validated by the copy scratchpad command.
@@ -407,12 +478,14 @@ inline int __write_cycle_address(int write_cycle_type)
 	return 0x260 + write_cycle_type * 4;
 }
 
-uint32_t ibutton_write_cycle_get(int portnum, int write_cycle_type)
+uint32_t ds1963s_client_write_cycle_get(struct ds1963s_client *ctx, int write_cycle_type)
 {
 	int address = __write_cycle_address(write_cycle_type);
+	int portnum = ctx->copr.portnum;
 	uint8_t block[7];
 
-	OWASSERT(SelectSHA(portnum), OWERROR_ACCESS_FAILED, FALSE);
+	if (__ds1963s_client_select_sha(ctx) == -1)
+		return (uint32_t)-1;
 
 	memset(block, 0xff, 7);
 	/* write scratchpad command */
@@ -436,7 +509,8 @@ ds1963s_write_cycle_get_all(struct ds1963s_client *ctx, uint32_t counters[16])
 	uint8_t block[67];
 	int i;
 
-	OWASSERT(SelectSHA(portnum), OWERROR_ACCESS_FAILED, -1);
+	if (__ds1963s_client_select_sha(ctx) == -1)
+		return -1;
 
 	memset(block, 0xff, sizeof block);
 	/* write scratchpad command */
@@ -461,7 +535,8 @@ uint32_t ds1963s_client_prng_get(struct ds1963s_client *ctx)
 	int address = 0x2A0;
 	uint8_t block[7];
 
-	OWASSERT(SelectSHA(portnum), OWERROR_ACCESS_FAILED, -1);
+	if (__ds1963s_client_select_sha(ctx) == -1)
+		return (uint32_t)-1;
 
 	memset(block, 0xff, sizeof block);
 	/* write scratchpad command */
@@ -485,7 +560,7 @@ int ds1963s_client_hide_set(struct ds1963s_client *ctx)
 	int status = 0;
 
 	if (ioctl(fd[ctx->copr.portnum], TIOCMSET, &status) == -1) {
-		ds1963s_errno = DS1963S_ERROR_SET_CONTROL_BITS;
+		ctx->errno = DS1963S_ERROR_SET_CONTROL_BITS;
 		return -1;
 	}
 
@@ -495,13 +570,14 @@ int ds1963s_client_hide_set(struct ds1963s_client *ctx)
 	/* Release and reacquire the port. */
 	owRelease(ctx->copr.portnum);
 
-        if ( (ctx->copr.portnum = onewire_acquire(ctx->device_path)) == -1)
+        ctx->copr.portnum = __ds1963s_acquire(ctx, ctx->device_path);
+	if (ctx->copr.portnum == -1)
 		return -1;
 
 	/* Find the DS1963S iButton again, as we've lost it after a
 	 * return to probe condition.
 	 */
-	if (onewire_ibutton_sha_find(ctx->copr.portnum, ctx->copr.devAN) == -1)
+	if (__ds1963s_find(ctx, ctx->copr.portnum, ctx->copr.devAN) == -1)
 		return -1;
 
 	return 0;
@@ -516,41 +592,46 @@ int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
 	int address;
 	uint8_t es;
 
-	assert(secret >= 0 && secret <= 7);
-	assert(len <= 8);
+	if (secret < 0 || secret > 7) {
+		ctx->errno = DS1963S_ERROR_SECRET_NUM;
+		return -1;
+	}
+
+	if (len > 8) {
+		ctx->errno = DS1963S_ERROR_SECRET_LEN;
+		return -1;
+	}
 
         secret_addr = 0x200 + secret * 8;
 
 	/* Erase the scratchpad to clear the HIDE flag. */
-	if (EraseScratchpadSHA18(copr->portnum, 0, 0) == FALSE)
+	if (ds1963s_client_scratchpad_erase(ctx) == -1)
 		return -1;
 
 	/* Write the secret data to the scratchpad. */ 
-	if (ds1963s_scratchpad_write(ctx, 0, data, len) == -1) {
-		fprintf(stderr, "Error writing scratchpad.\n");
-		exit(EXIT_FAILURE);
-	}
+	if (ds1963s_scratchpad_write(ctx, 0, data, len) == -1)
+		return -1;
 
 	/* Read it back to validate it. */
 	if (ReadScratchpadSHA18(copr->portnum, &address, &es, buf, 0) == FALSE) {
-		fprintf(stderr, "Error reading scratchpad.\n");
-		exit(EXIT_FAILURE);
+		ctx->errno = DS1963S_ERROR_SP_READ;
+		return -1;
 	}
 
 	/* Verify if we read what we wrote out. */
-	if (memcmp(buf, data, len) != 0)
+	if (memcmp(buf, data, len) != 0) {
+		ctx->errno = DS1963S_ERROR_INTEGRITY;
 		return -1;
+	}
 
 	/* Now latch in TA1 and TA2 with secret_addr. */
-	if (ds1963s_scratchpad_write(ctx, secret_addr, data, len) == -1) {
-		fprintf(stderr, "Error writing scratchpad.\n");
-		exit(EXIT_FAILURE);
-	}
+	if (ds1963s_scratchpad_write(ctx, secret_addr, data, len) == -1)
+		return -1;
 
 	/* Read back address and es for validation. */
 	if (ReadScratchpadSHA18(copr->portnum, &address, &es, buf, 0) == FALSE) {
-		fprintf(stderr, "Error reading scratchpad (1).\n");
-		exit(EXIT_FAILURE);
+		ctx->errno = DS1963S_ERROR_SP_READ;
+		return -1;
 	}
 
 	/* Set the hide flag so we can copy to the secret. */
@@ -559,27 +640,22 @@ int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
 
 	/* ??? */
 	if (ReadScratchpadSHA18(copr->portnum, &address, &es, buf, 0) == FALSE) {
+		ctx->errno = DS1963S_ERROR_SP_READ;
 		return -1;
-		fprintf(stderr, "Error reading scratchpad (2).\n");
-		owPrintErrorMsg(stdout);
-		exit(EXIT_FAILURE);
 	}
 
 	/* Copy scratchpad data to the secret. */
 	if (CopyScratchpadSHA18(copr->portnum, secret_addr, len, 0) == FALSE) {
-		fprintf(stderr, "Error copying scratchpad.\n");
-		exit(EXIT_FAILURE);
+		ctx->errno = DS1963S_ERROR_SP_COPY;
+		return -1;
 	}
 
 	return 0;
 }
 
-void ibutton_perror(const char *s)
+void ds1963s_client_perror(struct ds1963s_client *ctx, const char *s)
 {
-	if (s)
-		fprintf(stderr, "%s: ", s);
-
-	fprintf(stderr, "%s\n", owGetErrorMsg(owGetErrorNum()));
+	ds1963s_perror(ctx->errno, s);
 }
 
 static uint8_t ds1963s_crc8_table[] = {

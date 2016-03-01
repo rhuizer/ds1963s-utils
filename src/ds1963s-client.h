@@ -31,6 +31,7 @@ struct ds1963s_client
 	const char	*device_path;
 	SHACopr		copr;
 	int		resume;
+	int		errno;
 };
 
 struct ds1963s_read_auth_page_reply
@@ -56,10 +57,11 @@ extern "C" {
 
 int ds1963s_client_init(struct ds1963s_client *ctx, const char *device);
 void ds1963s_client_destroy(struct ds1963s_client *ctx);
-int ds1963s_client_page_to_address(int page);
-int ds1963s_client_address_to_page(int address);
+int ds1963s_client_page_to_address(struct ds1963s_client *ctx, int page);
+int ds1963s_client_address_to_page(struct ds1963s_client *ctx, int address);
 
 /* Scratchpad related functions. */
+int ds1963s_client_scratchpad_erase(struct ds1963s_client *ctx);
 int ds1963s_scratchpad_write(struct ds1963s_client *ctx, uint16_t address,
                              const uint8_t *data, size_t len);
 int ds1963s_scratchpad_write_resume(struct ds1963s_client *ctx,
@@ -73,7 +75,7 @@ ssize_t ds1963s_scratchpad_read_resume(struct ds1963s_client *ctx,
 int ds1963s_client_read_auth(struct ds1963s_client *ctx, int address,
         struct ds1963s_read_auth_page_reply *reply, int resume);
 
-int ds1963s_client_sign_data(struct ds1963s_client *ctx, int address);
+int ds1963s_client_sign_data(struct ds1963s_client *ctx, int address, unsigned char hash[20]);
 
 int ds1963s_client_rom_get(struct ds1963s_client *ctx, struct ds1963s_rom *rom);
 int ds1963s_client_serial_get(struct ds1963s_client *ctx, uint8_t buf[6]);
@@ -87,7 +89,7 @@ int ds1963s_client_memory_write(struct ds1963s_client *ctx, uint16_t address,
                                 const uint8_t *data, size_t size);
 uint32_t ds1963s_client_prng_get(struct ds1963s_client *ctx);
 
-void ibutton_perror(const char *s);
+void ds1963s_client_perror(struct ds1963s_client *ctx, const char *s);
 uint32_t ibutton_write_cycle_get(int portnum, int write_cycle_type);
 int ds1963s_write_cycle_get_all(struct ds1963s_client*, uint32_t [16]);
 int ds1963s_client_hide_set(struct ds1963s_client *ctx);
