@@ -17,7 +17,7 @@
 /* Calculate the value for MPX, as used in __sha1_get_input_1. */
 static uint8_t __mpx_get(int M, int X, uint8_t *SP)
 {
-	return (M << 7) | (X << 6) | (SP[12] & 0x1F);
+	return (M << 7) | (X << 6) | (SP[12] & 0x3F);
 }
 
 /* Calculate the value for MP, as used in __sha1_get_input_2. */
