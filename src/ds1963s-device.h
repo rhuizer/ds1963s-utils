@@ -31,6 +31,8 @@ struct ds1963s_device
 extern "C" {
 #endif
 
+void ds1963s_dev_init(struct ds1963s_device *ds1963s);
+void ds1963s_dev_destroy(struct ds1963s_device *ds1963s);
 void ds1963s_dev_erase_scratchpad(struct ds1963s_device *ds1963s, int address);
 void ds1963s_dev_read_auth_page(struct ds1963s_device *ds1963s, int page);
 void ds1963s_dev_sign_data_page(struct ds1963s_device *ds1963s);

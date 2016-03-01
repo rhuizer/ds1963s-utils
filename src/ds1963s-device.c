@@ -117,6 +117,20 @@ static void __sha1_get_output_1(uint8_t SP[32], uint32_t A, uint32_t B,
 	SP[27] = (A >> 24) & 0xFF;
 }
 
+void ds1963s_dev_init(struct ds1963s_device *ds1963s)
+{
+	memset(ds1963s, 0, sizeof *ds1963s);
+	ds1963s->family = DS1963S_DEVICE_FAMILY;
+	memset(ds1963s->data_memory, 0xaa, sizeof ds1963s->data_memory);
+	memset(ds1963s->secret_memory, 0xaa, sizeof ds1963s->secret_memory);
+	memset(ds1963s->scratchpad, 0xff, sizeof ds1963s->scratchpad);
+}
+
+void ds1963s_dev_destroy(struct ds1963s_device *ds1963s)
+{
+	memset(ds1963s, 0, sizeof *ds1963s);
+}
+
 void ds1963s_dev_erase_scratchpad(struct ds1963s_device *ds1963s, int address)
 {
 	assert(ds1963s != NULL);

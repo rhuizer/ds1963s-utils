@@ -36,7 +36,6 @@ struct ds1963s_brute_secret
 struct ds1963s_brute
 {
 	int				log_fd;
-	struct ds1963s_client		client;
 	struct ds1963s_device		dev;
 	struct ds1963s_brute_secret	secrets[8];
 };
@@ -44,25 +43,33 @@ struct ds1963s_brute
 struct ds1963s_tool
 {
 	/* Client for communication with a DS1963S ibutton. */
-	struct ds1963s_client *client;
+	struct ds1963s_client client;
 
 	/* Side-channel module used for dumping secrets. */
 	struct ds1963s_brute brute;
 };
 
-void ds1963s_tool_init(struct ds1963s_tool *tool)
+int ds1963s_tool_init(struct ds1963s_tool *tool, const char *device)
 {
 	memset(tool, 0, sizeof *tool);
+	return ds1963s_client_init(&tool->client, device);
 }
 
-void ds1963s_tool_fatal(struct ds1963s_client *ctx)
+void ds1963s_tool_destroy(struct ds1963s_tool *tool)
 {
-	ds1963s_client_destroy(ctx);
+	ds1963s_dev_destroy(&tool->brute);
+	ds1963s_client_destroy(&tool->client);
+}
+
+void ds1963s_tool_fatal(struct ds1963s_tool *tool)
+{
+	ds1963s_tool_destroy(tool);
 	exit(EXIT_FAILURE);
 }
 
-void ds1963s_tool_memory_dump(struct ds1963s_client *ctx)
+void ds1963s_tool_memory_dump(struct ds1963s_tool *tool)
 {
+	struct ds1963s_client *ctx = &tool->client;
 	uint8_t page[32];
 	int i, j;
 
@@ -115,22 +122,23 @@ void ds1963s_tool_write_cycle_counters_print(uint32_t counters[16])
 	printf("Secret     7: 0x%.8x\n", counters[15]);
 }
 
-void ds1963s_tool_info(struct ds1963s_client *ctx)
+void ds1963s_tool_info(struct ds1963s_tool *tool)
 {
 	struct ds1963s_rom rom;
 	uint32_t counters[16];
 
-	if (ds1963s_client_rom_get(ctx, &rom) != -1)
+	if (ds1963s_client_rom_get(&tool->client, &rom) != -1)
 		ds1963s_tool_rom_print(&rom);
 
-	if (ds1963s_write_cycle_get_all(ctx, counters) != -1)
+	if (ds1963s_write_cycle_get_all(&tool->client, counters) != -1)
 		ds1963s_tool_write_cycle_counters_print(counters);
 
 	printf("\n4096-bit NVRAM dump\n");
 	printf("-------------------\n");
-	ds1963s_tool_memory_dump(ctx);
+	ds1963s_tool_memory_dump(tool);
 
-	printf("\nPRNG Counter: 0x%.8x\n", ds1963s_client_prng_get(ctx));
+	printf("\nPRNG Counter: 0x%.8x\n",
+		ds1963s_client_prng_get(&tool->client));
 }
 
 int ds1963s_tool_info_full_disclaimer(void)
@@ -147,48 +155,73 @@ int ds1963s_tool_info_full_disclaimer(void)
 	return ch == 'y' || ch == 'Y';
 }
 
-void ds1963s_tool_info_full(struct ds1963s_client *ctx)
+void ds1963s_tool_info_full(struct ds1963s_tool *tool)
 {
 	struct ds1963s_rom rom;
 	uint32_t counters[16];
+	uint8_t buf[256];
 
 	if (ds1963s_tool_info_full_disclaimer() == 0)
 		return;
 
-	if (ds1963s_client_rom_get(ctx, &rom) != -1)
+	if (ds1963s_client_rom_get(&tool->client, &rom) != -1)
 		ds1963s_tool_rom_print(&rom);
 
-	if (ds1963s_write_cycle_get_all(ctx, counters) != -1)
+	if (ds1963s_write_cycle_get_all(&tool->client, counters) != -1)
 		ds1963s_tool_write_cycle_counters_print(counters);
 
 	printf("\n4096-bit NVRAM dump\n");
 	printf("-------------------\n");
-	ds1963s_tool_memory_dump(ctx);
+	ds1963s_tool_memory_dump(tool);
 
-	printf("\nPRNG Counter: 0x%.8x\n", ds1963s_client_prng_get(ctx));
+	printf("\nPRNG Counter: 0x%.8x\n",
+		ds1963s_client_prng_get(&tool->client));
+
+	/* Initialize the brute forcer state. */
+	for (int i = 0; i < 8; i++) {
+		int r;
+
+		r = ds1963s_client_memory_read(
+			&tool->client,
+			32 * i,
+			&buf[32 * i],
+			32
+		);
+		if (r == -1) {
+			ds1963s_client_perror(&tool->client,
+				"ds1963s_client_memory_read()");
+			ds1963s_tool_fatal(tool);
+		}
+	}
+
 }
 
-void ds1963s_tool_write(struct ds1963s_client *ctx, uint16_t address,
+void ds1963s_tool_write(struct ds1963s_tool *tool, uint16_t address,
                         const uint8_t *data, size_t len)
 {
+	struct ds1963s_client *ctx = &tool->client;
+
 	if (ds1963s_client_memory_write(ctx, address, data, len) == -1) {
 		ds1963s_client_perror(ctx, "ds1963s_client_memory_write()");
-		ds1963s_tool_fatal(ctx);
+		ds1963s_tool_fatal(tool);
 	}
 }
 
-void ds1963s_tool_secret_write(struct ds1963s_client *ctx, int secret,
+void ds1963s_tool_secret_write(struct ds1963s_tool *tool, int secret,
                                const uint8_t *data, size_t len)
 {
+	struct ds1963s_client *ctx = &tool->client;
+
 	if (ds1963s_client_secret_write(ctx, secret, data, len) == -1) {
 		ds1963s_client_perror(ctx, "ds1963s_client_secret_write()");
-		ds1963s_tool_fatal(ctx);
+		ds1963s_tool_fatal(tool);
 	}
 }
 
 void
-ds1963s_tool_read(struct ds1963s_client *ctx, uint16_t address, size_t size)
+ds1963s_tool_read(struct ds1963s_tool *tool, uint16_t address, size_t size)
 {
+	struct ds1963s_client *ctx = &tool->client;
 	uint8_t data[32];
 	size_t i;
 
@@ -209,8 +242,9 @@ ds1963s_tool_read(struct ds1963s_client *ctx, uint16_t address, size_t size)
 }
 
 void
-ds1963s_tool_read_auth(struct ds1963s_client *ctx, int page, size_t size)
+ds1963s_tool_read_auth(struct ds1963s_tool *tool, int page, size_t size)
 {
+	struct ds1963s_client *ctx = &tool->client;
 	struct ds1963s_read_auth_page_reply reply;
 	int addr;
 	int i;
@@ -247,8 +281,9 @@ ds1963s_tool_read_auth(struct ds1963s_client *ctx, int page, size_t size)
 }
 
 void
-ds1963s_tool_sign(struct ds1963s_client *ctx, int page, size_t size)
+ds1963s_tool_sign(struct ds1963s_tool *tool, int page, size_t size)
 {
+	struct ds1963s_client *ctx = &tool->client;
 	unsigned char hash[20];
 	int addr;
 
@@ -354,7 +389,7 @@ const char optstr[] = "a:d:hr:p:s:ifw";
 int main(int argc, char **argv)
 {
 	const char *device_name = DEFAULT_SERIAL_PORT;
-	struct ds1963s_client ctx;
+	struct ds1963s_tool tool;
 	int address, page, size;
 	int mask, mode, o;
 	uint8_t data[32];
@@ -375,9 +410,9 @@ int main(int argc, char **argv)
 			break;
 		case 'a':
 			address = atoi(optarg);
-			page = ds1963s_client_address_to_page(&ctx, address);
+			page = ds1963s_client_address_to_page(&tool.client, address);
 			if (page == -1) {
-				ds1963s_client_perror(&ctx, "");
+				ds1963s_client_perror(&tool.client, NULL);
 				exit(EXIT_FAILURE);
 			}
 			break;
@@ -393,9 +428,9 @@ int main(int argc, char **argv)
 			break;
 		case 'p':
 			page = atoi(optarg);
-			address = ds1963s_client_page_to_address(&ctx, page);
+			address = ds1963s_client_page_to_address(&tool.client, page);
 			if (address == -1) {
-				ds1963s_client_perror(&ctx, "");
+				ds1963s_client_perror(&tool.client, NULL);
 				exit(EXIT_FAILURE);
 			}
 			break;
@@ -447,35 +482,35 @@ int main(int argc, char **argv)
 	}
 
 	/* Initialize the DS1963S device. */
-	if (ds1963s_client_init(&ctx, device_name) == -1) {
-		ds1963s_client_perror(&ctx, "ds1963s_init()");
+	if (ds1963s_tool_init(&tool, device_name) == -1) {
+		ds1963s_client_perror(&tool.client, "ds1963s_init()");
 		exit(EXIT_FAILURE);
 	}
 
 	switch (mode) {
 	case MODE_INFO:
-		ds1963s_tool_info(&ctx);
+		ds1963s_tool_info(&tool);
 		break;
 	case MODE_INFO_FULL:
-		ds1963s_tool_info_full(&ctx);
+		ds1963s_tool_info_full(&tool);
 		break;
 	case MODE_READ:
-		ds1963s_tool_read(&ctx, address, size);
+		ds1963s_tool_read(&tool, address, size);
 		break;
 	case MODE_READ_AUTH:
-		ds1963s_tool_read_auth(&ctx, page, size);
+		ds1963s_tool_read_auth(&tool, page, size);
 		break;
 	case MODE_SIGN:
-		ds1963s_tool_sign(&ctx, page, size);
+		ds1963s_tool_sign(&tool, page, size);
 		break;
 	case MODE_WRITE:
-		ds1963s_tool_write(&ctx, address, data, len);
+		ds1963s_tool_write(&tool, address, data, len);
 		break;
 	case MODE_WRITE_SECRET:
-		ds1963s_tool_secret_write(&ctx, secret, data, len);
+		ds1963s_tool_secret_write(&tool, secret, data, len);
 		break;
 	}
 
-	ds1963s_client_destroy(&ctx);
+	ds1963s_tool_destroy(&tool);
 	exit(EXIT_SUCCESS);
 }
