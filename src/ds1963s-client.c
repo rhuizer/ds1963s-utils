@@ -584,7 +584,7 @@ int ds1963s_client_hide_set(struct ds1963s_client *ctx)
 }
 
 int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
-                                const uint8_t *data, size_t len)
+                                const void *data, size_t len)
 {
 	SHACopr *copr = &ctx->copr;
 	uint8_t buf[32];

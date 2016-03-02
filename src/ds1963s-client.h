@@ -94,7 +94,7 @@ uint32_t ibutton_write_cycle_get(int portnum, int write_cycle_type);
 int ds1963s_write_cycle_get_all(struct ds1963s_client*, uint32_t [16]);
 int ds1963s_client_hide_set(struct ds1963s_client *ctx);
 int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
-                                const uint8_t *data, size_t len);
+                                const void *data, size_t len);
 
 uint8_t ds1963s_crc8(const uint8_t *buf, size_t count);
 uint16_t ds1963s_crc16(const uint8_t *buf, size_t count);

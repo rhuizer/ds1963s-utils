@@ -6,6 +6,7 @@
  *
  *  -- Ronald Huizer, (C) 2013-2016
  */
+#include <assert.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
@@ -57,7 +58,7 @@ int ds1963s_tool_init(struct ds1963s_tool *tool, const char *device)
 
 void ds1963s_tool_destroy(struct ds1963s_tool *tool)
 {
-	ds1963s_dev_destroy(&tool->brute);
+	ds1963s_dev_destroy(&tool->brute.dev);
 	ds1963s_client_destroy(&tool->client);
 }
 
@@ -66,6 +67,95 @@ void ds1963s_tool_fatal(struct ds1963s_tool *tool)
 	ds1963s_tool_destroy(tool);
 	exit(EXIT_FAILURE);
 }
+
+int ds1963s_tool_secret_hmac_target_get(
+	struct ds1963s_tool *tool,
+	int secret,
+	int link)
+{
+	struct ds1963s_brute *brute = &tool->brute;
+	struct ds1963s_read_auth_page_reply reply;
+	int addr;
+
+	assert(brute != NULL);
+	assert(secret >= 0 && secret <= 8);
+	assert(link >= 0 && link <= 3);
+
+	/* Only link 0 is not destructive.  The other 3 links need a partial
+	 * overwrite to make things work.
+	 */
+	if (link != 0) {
+		ds1963s_client_secret_write(
+			&tool->client,		/* DS1963S context         */
+			secret,			/* Secret number           */
+			"\0\0\0\0\0\0\0\0",	/* Partial secret to write */
+			link * 2		/* Length of the secret    */
+		);
+	}
+
+	/* Calculate the address of this secret. */
+	addr = ds1963s_client_page_to_address(&tool->client, secret);
+	if (addr == -1)
+		return -1;
+
+	/* Erase the scratchpad. */
+	if (ds1963s_client_scratchpad_erase(&tool->client) == -1)
+		return -1;
+
+	/* Read auth. page over the current scratchpad/data/etc. */
+	if (ds1963s_client_read_auth(&tool->client, addr, &reply, 0) == -1)
+		return -1;
+
+	memcpy(brute->secrets[secret].target_hmac[link], reply.signature, 20);
+//	brutus_transaction_log_append(brute, reply.signature, link);
+
+	return 0;
+}
+
+void *ds1963s_tool_brute_link(struct ds1963s_tool *tool, int secret, int link)
+{
+	struct ds1963s_brute_secret *secret_state;
+	struct ds1963s_brute *brute;
+	struct ds1963s_device *dev;
+	int i;
+
+ 	brute = &tool->brute;
+
+	assert(brute != NULL);
+	assert(secret >= 0 && secret <= 8);
+	assert(link >= 0 && link <= 3);
+
+ 	secret_state = &brute->secrets[secret];
+	dev          = &brute->dev;
+
+	/* Set the secret to 0. */
+	memset(&dev->secret_memory[secret * 8], 0, 8);
+
+	/* Copy the known part of the secret out for this link type. */
+	memcpy(&dev->secret_memory[secret * 8 + link * 2],
+	       &secret_state->secret[link * 2],
+	       8 - link * 2);
+
+	for (i = 0; i < 65536; i++) {
+		int index = secret * 8 + link * 2;
+
+		dev->secret_memory[index]     = (i >> 0) & 0xFF;
+		dev->secret_memory[index + 1] = (i >> 8) & 0xFF;
+
+		ds1963s_dev_read_auth_page(dev, secret);
+
+		if (!memcmp(secret_state->target_hmac[link], &dev->scratchpad[8], 20)) {
+			secret_state->secret[link * 2] = (i >>  0) & 0xFF;
+			secret_state->secret[link * 2 + 1] = (i >>  8) & 0xFF;
+			break;
+		}
+
+		memset(dev->scratchpad, 0xFF, 32);
+	}
+
+	return NULL;
+}
+
 
 void ds1963s_tool_memory_dump(struct ds1963s_tool *tool)
 {
@@ -160,6 +250,8 @@ void ds1963s_tool_info_full(struct ds1963s_tool *tool)
 	struct ds1963s_rom rom;
 	uint32_t counters[16];
 	uint8_t buf[256];
+	int i, secret;
+	int link;
 
 	if (ds1963s_tool_info_full_disclaimer() == 0)
 		return;
@@ -178,7 +270,7 @@ void ds1963s_tool_info_full(struct ds1963s_tool *tool)
 		ds1963s_client_prng_get(&tool->client));
 
 	/* Initialize the brute forcer state. */
-	for (int i = 0; i < 8; i++) {
+	for (i = 0; i < 8; i++) {
 		int r;
 
 		r = ds1963s_client_memory_read(
@@ -193,6 +285,50 @@ void ds1963s_tool_info_full(struct ds1963s_tool *tool)
 			ds1963s_tool_fatal(tool);
 		}
 	}
+
+	memcpy(tool->brute.dev.serial, rom.serial, 6);
+	memcpy(tool->brute.dev.data_memory, buf, sizeof buf);
+
+	/* Initialize the write cycle counters. */
+	for (i = 0; i < 8; i++) {
+		tool->brute.dev.data_wc[i]   = counters[i];
+		tool->brute.dev.secret_wc[i] = counters[i + 8];
+	}
+
+	printf("01. Calculating HMAC links.\n");
+
+	for (secret = 0; secret < 8; secret++) {
+		for (link = 0; link < 4; link++) {
+			printf("\r    Secret #%d [%d/4]", secret, link);
+			fflush(stdout);
+			ds1963s_tool_secret_hmac_target_get(tool, secret, link);
+		}
+		printf("\r    Secret #%d [4/4]\n", secret);
+	}
+
+	printf("02. Calculating secrets from HMAC links.\n");
+
+	for (secret = 0; secret < 8; secret++) {
+		for (link = 3; link >= 0; link--)
+			ds1963s_tool_brute_link(tool, secret, link);
+
+		printf("    Secret #%d: ", secret);
+		for (i = 0; i < 8; i++)
+			printf("%.2x", tool->brute.secrets[secret].secret[i]);
+		printf("\n");
+	}
+
+	printf("03. Restoring recovered keys.\n");
+
+	for (secret = 0; secret < 8; secret++) {
+		printf("    Secret #%d\n", secret);
+        	ds1963s_client_secret_write(
+			&tool->client,
+			secret,
+			tool->brute.secrets[secret].secret,
+			8
+		);
+        }
 
 }
 
@@ -228,13 +364,13 @@ ds1963s_tool_read(struct ds1963s_tool *tool, uint16_t address, size_t size)
 	if (ds1963s_client_scratchpad_erase(ctx) == -1) {
 		ds1963s_client_perror(ctx,
 			"ds1963s_client_scratchpad_erase()");
-		ds1963s_tool_fatal(ctx);
+		ds1963s_tool_fatal(tool);
 	}
 
 	/* Will not read more than 32 bytes. */
 	if (ds1963s_client_memory_read(ctx, address, data, size) == -1) {
 		ds1963s_client_perror(ctx, "ds1963s_client_memory_read()");
-		ds1963s_tool_fatal(ctx);
+		ds1963s_tool_fatal(tool);
 	}
 
 	for (i = 0; i < size; i++)
@@ -251,18 +387,18 @@ ds1963s_tool_read_auth(struct ds1963s_tool *tool, int page, size_t size)
 
 	if ( (addr = ds1963s_client_page_to_address(ctx, page)) == -1) {
 		ds1963s_client_perror(ctx, "ds1963s_client_page_to_address()");
-		ds1963s_tool_fatal(ctx);
+		ds1963s_tool_fatal(tool);
 	}
 
 	if (ds1963s_client_scratchpad_erase(ctx) == -1) {
 		ds1963s_client_perror(ctx,
 			"ds1963s_client_scratchpad_erase()");
-		ds1963s_tool_fatal(ctx);
+		ds1963s_tool_fatal(tool);
 	}
 
 	if (ds1963s_client_read_auth(ctx, addr, &reply, 0) == -1) {
 		ds1963s_client_perror(ctx, "ds1963s_client_read_auth()");
-		ds1963s_tool_fatal(ctx);
+		ds1963s_tool_fatal(tool);
 	}
 
 	printf("Read authenticated page #%.2d\n", page);
@@ -289,7 +425,7 @@ ds1963s_tool_sign(struct ds1963s_tool *tool, int page, size_t size)
 
 	if ( (addr = ds1963s_client_page_to_address(ctx, page)) == -1) {
 		ds1963s_client_perror(ctx, NULL);
-		ds1963s_tool_fatal(ctx);
+		ds1963s_tool_fatal(tool);
 	}
 
 	/* XXX: signing happens over scratchpad data.  We may not want
@@ -299,12 +435,12 @@ ds1963s_tool_sign(struct ds1963s_tool *tool, int page, size_t size)
 	if (ds1963s_client_scratchpad_erase(ctx) == -1) {
 		ds1963s_client_perror(ctx,
 			"ds1963s_client_scratchpad_erase()");
-		ds1963s_tool_fatal(ctx);
+		ds1963s_tool_fatal(tool);
 	}
 
 	if (ds1963s_client_sign_data(ctx, addr, hash) == -1) {
 		ds1963s_client_perror(ctx, "ds1963s_client_sign_data()");
-		ds1963s_tool_fatal(ctx);
+		ds1963s_tool_fatal(tool);
 	}
 
 	printf("Sign data page #%.2d\n", page);
