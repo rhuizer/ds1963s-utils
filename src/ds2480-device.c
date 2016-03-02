@@ -15,51 +15,6 @@ void ds2480_dev_init(struct ds2480_device *dev)
 	dev->config.baudrate         = DS2480_PARAM_BAUDRATE_VALUE_9600;
 }
 
-int ds2480_dev_detect_handle(struct ds2480_device *dev, struct transport *t)
-{
-	unsigned char buf[8];
-
-	/* We expect a 0xC1 timing byte. */
-	if (transport_read_all(t, buf, 1) == -1)
-		return -1;
-
-	if (buf[0] != 0xC1)
-		return -1;
-
-	if (transport_read_all(t, buf, 5) == -1)
-		return -1;
-
-	/* default PDSRC = 1.37Vus */
-	if (buf[0] != (CMD_CONFIG | PARMSEL_SLEW | PARMSET_Slew1p37Vus))
-		return -1;
-
-	/* default W1LT = 10us */
-	if (buf[1] != (CMD_CONFIG | PARMSEL_WRITE1LOW | PARMSET_Write10us))
-		return -1;
-
-	/* default DSO/WORT = 8us */
-	if (buf[2] != (CMD_CONFIG | PARMSEL_SAMPLEOFFSET | PARMSET_SampOff8us))
-		return -1;
-
-	/* command to read the baud rate (to test command block) */
-	if (buf[3] != (CMD_CONFIG | PARMSEL_PARMREAD | (PARMSEL_BAUDRATE >> 3)))
-		return -1;
-
-	/* 1 bit operation (to test 1-Wire block) */
-	if (buf[4] != (CMD_COMM | FUNCTSEL_BIT | PARMSET_9600 | BITPOL_ONE))
-		return -1;
-
-	/* XXX: figure out what these fields mean.  For now we just send the
-	 * expected answer.
-	 */
-	buf[0] = buf[1] = buf[2] = 0;
-	buf[3] = PARMSET_9600;
-	buf[4] = 0x90 | PARMSET_9600;
-	transport_write(t, buf, 5);
-
-	return 0;
-}
-
 void ds2480_dev_reset(struct ds2480_device *dev, int speed)
 {
 	assert(dev != NULL);
@@ -177,6 +132,7 @@ int ds2480_dev_config_write(struct ds2480_device *dev, int param, int value)
 static int
 ds2480_dev_command_mode(struct ds2480_device *dev, struct transport *t)
 {
+	unsigned char reply[1];
 	unsigned char buf[8];
 	int speed;
 
@@ -192,19 +148,40 @@ ds2480_dev_command_mode(struct ds2480_device *dev, struct transport *t)
 		return -1;
 
 	/* Configuration commands have their most significant bit set to 0. */
-	if (buf[0] & 0x80) {
+	if ( (buf[0] & 0x80) == 0) {
+		int param_code  = (buf[0] >> 4) & 7;
+		int param_value = (buf[0] >> 1) & 7;
+
+		printf("config command\n");
+
+		if (param_code == 0) {
+			/* param_value will hold the param_code for reads. */
+			param_value = ds2480_dev_config_read(dev, param_value);
+			printf("READ BAUD: %d\n", param_value);
+			reply[0] = (buf[0] & ~0xF) | (param_value << 1);
+		} else {
+			ds2480_dev_config_write(dev, param_code, param_value);
+			reply[0] = buf[0] & ~1;
+		}
+		transport_write_all(t, reply, 1);
+
+		/* Responses are the same as commands with LSB cleared. */
 		return 0;
 	}
 
 	/* Otherwise we use the top 3-bits to specify the operation. */
 	switch (buf[0] >> 5) {
 	case DS2480_COMMAND_SINGLE_BIT:
+		/* XXX: should handle this properly. */
+		reply[0] = buf[0] & ~3;
+		transport_write_all(t, reply, 1);
+		break;
 	case DS2480_COMMAND_SEARCH_ACCELERATOR_CONTROL:
 	case DS2480_COMMAND_RESET:
 		speed = __ds2480_speed_parse( (buf[0] >> 2) & 3);
 		ds2480_dev_reset(dev, speed);
-		if (transport_write_all(t, "\xcd", 1) == -1)
-			return -1;
+//		if (transport_write_all(t, "\xcd", 1) == -1)
+//			return -1;
 		break;
 	case DS2480_COMMAND_PULSE:
 	default:
@@ -224,8 +201,4 @@ int ds2480_dev_run(struct ds2480_device *dev, struct transport *t)
 		if (dev->mode == DS2480_MODE_COMMAND)
 			ds2480_dev_command_mode(dev, t);
 	} while (1);
-
-	if (transport_read_all(t, buf, 1) == -1)
-		return -1;
-
 }
