@@ -30,6 +30,7 @@ int     transport_destroy(struct transport *t);
 ssize_t transport_read(struct transport *t, void *buf, size_t size);
 int     transport_read_all(struct transport *t, void *buf, size_t size);
 ssize_t transport_write(struct transport *t, const void *buf, size_t size);
+int     transport_write_all(struct transport *t, const void *buf, size_t size);
 
 #ifdef __cplusplus
 };
