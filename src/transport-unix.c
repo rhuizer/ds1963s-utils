@@ -19,6 +19,28 @@ static int close_no_EINTR(int fd)
 	return ret;
 }
 
+static ssize_t read_no_EINTR(int fd, void *buf, size_t count)
+{
+	ssize_t ret;
+
+	do {
+		ret = read(fd, buf, count);
+	} while (ret == -1 && errno == EINTR);
+
+	return ret;
+}
+
+static ssize_t write_no_EINTR(int fd, const void *buf, size_t count)
+{
+	ssize_t ret;
+
+	do {
+		ret = write(fd, buf, count);
+	} while (ret == -1 && errno == EINTR);
+
+	return ret;
+}
+
 int transport_unix_init(struct transport *t)
 {
 	struct transport_unix_data *data;
@@ -121,7 +143,7 @@ static ssize_t transport_unix_read(struct transport *t, void *buf, size_t count)
 	assert(t->private_data != NULL);
 
 	data = t->private_data;
-	return read(data->sd, buf, count);
+	return read_no_EINTR(data->sd, buf, count);
 }
 
 static ssize_t
@@ -133,7 +155,7 @@ transport_unix_write(struct transport *t, const void *buf, size_t count)
 	assert(t->private_data != NULL);
 
 	data = t->private_data;
-	return write(data->sd, buf, count);
+	return write_no_EINTR(data->sd, buf, count);
 }
 
 static struct transport_operations transport_unix_operations = {
