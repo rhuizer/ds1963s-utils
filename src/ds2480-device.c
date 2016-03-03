@@ -45,12 +45,6 @@ __ds2480_speed_parse(int speed)
 	abort();
 }
 
-#if 0
-int ds2480_dev_config_read(struct ds2480_device *dev, ...)
-{
-}
-#endif
-
 int ds2480_dev_config_read(struct ds2480_device *dev, int param)
 {
 	assert(dev != NULL);
@@ -130,63 +124,89 @@ int ds2480_dev_config_write(struct ds2480_device *dev, int param, int value)
 }
 
 static int
-ds2480_dev_command_mode(struct ds2480_device *dev, struct transport *t)
+ds2480_dev_command_mode(struct ds2480_device *dev, unsigned char byte)
 {
-	unsigned char reply[1];
-	unsigned char buf[8];
+	unsigned char reply;
 	int speed;
 
 	assert(dev != NULL);
-	assert(t != NULL);
 	assert(dev->mode == DS2480_COMMAND_MODE);
 
-	if (transport_read_all(t, buf, 1) == -1)
+	/* All command codes have their least significant bit set. */
+	if ( (byte & 1) == 0)
 		return -1;
 
-	/* All command codes have their least significant bit set. */
-	if ( (buf[0] & 1) == 0)
-		return -1;
+	/* Data mode switch. */
+	if (byte == 0xE1) {
+		dev->mode = DS2480_MODE_DATA;
+		return -2;
+	}
 
 	/* Configuration commands have their most significant bit set to 0. */
-	if ( (buf[0] & 0x80) == 0) {
-		int param_code  = (buf[0] >> 4) & 7;
-		int param_value = (buf[0] >> 1) & 7;
+	if ( (byte & 0x80) == 0) {
+		int param_code  = (byte >> 4) & 7;
+		int param_value = (byte >> 1) & 7;
 
 		if (param_code == 0) {
 			/* param_value will hold the param_code for reads. */
 			param_value = ds2480_dev_config_read(dev, param_value);
-			reply[0] = (buf[0] & ~0xF) | (param_value << 1);
+			reply = (byte & ~0xF) | (param_value << 1);
 		} else {
 			ds2480_dev_config_write(dev, param_code, param_value);
-			reply[0] = buf[0] & ~1;
+			reply = byte & ~1;
 		}
-		transport_write_all(t, reply, 1);
 
-		/* Responses are the same as commands with LSB cleared. */
-		return 0;
+		return reply;
 	}
 
 	/* Otherwise we use the top 3-bits to specify the operation. */
-	switch (buf[0] >> 5) {
+	switch (byte >> 5) {
 	case DS2480_COMMAND_SINGLE_BIT:
 		/* XXX: should handle this properly. */
-		reply[0] = buf[0] & ~3;
-		transport_write_all(t, reply, 1);
-		break;
+		return byte & ~3;
 	case DS2480_COMMAND_SEARCH_ACCELERATOR_CONTROL:
+		printf("SEARCH ACCELERATOR\n");
+		return -2;
 	case DS2480_COMMAND_RESET:
-		speed = __ds2480_speed_parse( (buf[0] >> 2) & 3);
+		speed = __ds2480_speed_parse( (byte >> 2) & 3);
 		ds2480_dev_reset(dev, speed);
-
-		if (transport_write_all(t, "\xcd", 1) == -1)
-			return -1;
-		break;
-	case DS2480_COMMAND_PULSE:
-	default:
-		return -1;
+		return 0xcd;
+//	case DS2480_COMMAND_PULSE:
 	}
 
-	return 0;
+	return -1;
+}
+
+
+static int
+ds2480_dev_data_mode(struct ds2480_device *dev, unsigned char byte)
+{
+	assert(dev != NULL);
+
+	if (byte == 0xE3) {
+		dev->mode = DS2480_MODE_CHECK;
+		return -2;
+	}
+
+	printf("%.2x\n", byte);
+
+	return -2;
+}
+
+static int
+ds2480_dev_check_mode(struct ds2480_device *dev, unsigned char request)
+{
+	assert(dev != NULL);
+
+	if (request == 0xE3) {
+		printf("DATA: %.2x\n", request);
+		dev->mode = DS2480_MODE_DATA;
+		return -2;
+	}
+
+	/* This is a command mode request.  Switch over. */
+	dev->mode = DS2480_MODE_COMMAND;
+	return ds2480_dev_command_mode(dev, request);
 }
 
 static inline int __is_reset(unsigned char byte)
@@ -196,7 +216,8 @@ static inline int __is_reset(unsigned char byte)
 
 int ds2480_dev_power_on(struct ds2480_device *dev, struct transport *t)
 {
-	unsigned char calibration;
+	unsigned char response;
+	unsigned char request;
 
 	assert(dev != NULL);
 
@@ -205,20 +226,40 @@ int ds2480_dev_power_on(struct ds2480_device *dev, struct transport *t)
 		return -1;
 
 	/* Handle the calibration byte. */
-	if (transport_read_all(t, &calibration, 1) == -1)
+	if (transport_read_all(t, &request, 1) == -1)
 		return -1;
 
 	/* We expect a reset command, but will not respond. */
-	if (!__is_reset(calibration))
+	if (!__is_reset(request))
 		return -1;
 
 	dev->mode = DS2480_MODE_COMMAND;
 
 	while (dev->mode != DS2480_MODE_INACTIVE) {
+		if (transport_read_all(t, &request, 1) == -1)
+			return -1;
+
 		switch (dev->mode) {
 		case DS2480_MODE_COMMAND:
-			ds2480_dev_command_mode(dev, t);
+			response = ds2480_dev_command_mode(dev, request);
 			break;
+		case DS2480_MODE_DATA:
+			response = ds2480_dev_data_mode(dev, request);
+			break;
+		case DS2480_MODE_CHECK:
+			response = ds2480_dev_check_mode(dev, request);
+			break;
+		}
+
+		if (response == -1)
+			return -1;
+
+		/* We have a real response, and we're still active, so we'll
+		 * reply on the bus.
+		 */
+		if (response != -2 && dev->mode != DS2480_MODE_INACTIVE) {
+			if (transport_write_all(t, &response, 1) == -1)
+				return -1;
 		}
 	}
 
