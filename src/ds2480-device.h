@@ -3,6 +3,7 @@
 
 #include "transport.h"
 
+#define DS2480_MODE_INACTIVE				0
 #define DS2480_MODE_COMMAND				1
 #define DS2480_MODE_DATA				2
 #define DS2480_MODE_CHECK				3

@@ -16,7 +16,7 @@ int main(void)
 	transport_unix_connect(t, "/tmp/centos7-serial");
 
 	ds2480_dev_init(&ds2480_dev);
-	ds2480_dev_run(&ds2480_dev, t);
+	ds2480_dev_power_on(&ds2480_dev, t);
 
 	transport_destroy(t);
 }

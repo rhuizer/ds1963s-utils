@@ -5,7 +5,7 @@
 
 void ds2480_dev_init(struct ds2480_device *dev)
 {
-	dev->mode                    = DS2480_MODE_COMMAND;
+	dev->mode                    = DS2480_MODE_INACTIVE;
 	dev->config.slew             = DS2480_PARAM_SLEW_VALUE_15Vus;
 	dev->config.pulse12v         = DS2480_PARAM_PULSE12V_VALUE_512us;
 	dev->config.pulse5v          = DS2480_PARAM_PULSE5V_VALUE_524ms;
@@ -152,12 +152,9 @@ ds2480_dev_command_mode(struct ds2480_device *dev, struct transport *t)
 		int param_code  = (buf[0] >> 4) & 7;
 		int param_value = (buf[0] >> 1) & 7;
 
-		printf("config command\n");
-
 		if (param_code == 0) {
 			/* param_value will hold the param_code for reads. */
 			param_value = ds2480_dev_config_read(dev, param_value);
-			printf("READ BAUD: %d\n", param_value);
 			reply[0] = (buf[0] & ~0xF) | (param_value << 1);
 		} else {
 			ds2480_dev_config_write(dev, param_code, param_value);
@@ -180,8 +177,9 @@ ds2480_dev_command_mode(struct ds2480_device *dev, struct transport *t)
 	case DS2480_COMMAND_RESET:
 		speed = __ds2480_speed_parse( (buf[0] >> 2) & 3);
 		ds2480_dev_reset(dev, speed);
-//		if (transport_write_all(t, "\xcd", 1) == -1)
-//			return -1;
+
+		if (transport_write_all(t, "\xcd", 1) == -1)
+			return -1;
 		break;
 	case DS2480_COMMAND_PULSE:
 	default:
@@ -191,14 +189,38 @@ ds2480_dev_command_mode(struct ds2480_device *dev, struct transport *t)
 	return 0;
 }
 
-int ds2480_dev_run(struct ds2480_device *dev, struct transport *t)
+static inline int __is_reset(unsigned char byte)
 {
-	unsigned char buf[8];
+	return (byte & 0xE3) == 0xC1;
+}
+
+int ds2480_dev_power_on(struct ds2480_device *dev, struct transport *t)
+{
+	unsigned char calibration;
 
 	assert(dev != NULL);
 
-	do {
-		if (dev->mode == DS2480_MODE_COMMAND)
+	/* Device is already powered-on.  Error. */
+	if (dev->mode != DS2480_MODE_INACTIVE)
+		return -1;
+
+	/* Handle the calibration byte. */
+	if (transport_read_all(t, &calibration, 1) == -1)
+		return -1;
+
+	/* We expect a reset command, but will not respond. */
+	if (!__is_reset(calibration))
+		return -1;
+
+	dev->mode = DS2480_MODE_COMMAND;
+
+	while (dev->mode != DS2480_MODE_INACTIVE) {
+		switch (dev->mode) {
+		case DS2480_MODE_COMMAND:
 			ds2480_dev_command_mode(dev, t);
-	} while (1);
+			break;
+		}
+	}
+
+	return 0;
 }
