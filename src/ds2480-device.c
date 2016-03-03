@@ -216,8 +216,8 @@ static inline int __is_reset(unsigned char byte)
 
 int ds2480_dev_power_on(struct ds2480_device *dev, struct transport *t)
 {
-	unsigned char response;
 	unsigned char request;
+	int response;
 
 	assert(dev != NULL);
 
@@ -230,6 +230,7 @@ int ds2480_dev_power_on(struct ds2480_device *dev, struct transport *t)
 		return -1;
 
 	/* We expect a reset command, but will not respond. */
+	/* XXX: this is supposed to be 9600 bps.  Add check later. */
 	if (!__is_reset(request))
 		return -1;
 
@@ -249,6 +250,9 @@ int ds2480_dev_power_on(struct ds2480_device *dev, struct transport *t)
 		case DS2480_MODE_CHECK:
 			response = ds2480_dev_check_mode(dev, request);
 			break;
+		default:
+			response = -1;
+			break;
 		}
 
 		if (response == -1)
@@ -257,8 +261,10 @@ int ds2480_dev_power_on(struct ds2480_device *dev, struct transport *t)
 		/* We have a real response, and we're still active, so we'll
 		 * reply on the bus.
 		 */
-		if (response != -2 && dev->mode != DS2480_MODE_INACTIVE) {
-			if (transport_write_all(t, &response, 1) == -1)
+		if (response >= 0 && dev->mode != DS2480_MODE_INACTIVE) {
+			unsigned char res = (unsigned char)response;
+
+			if (transport_write_all(t, &res, 1) == -1)
 				return -1;
 		}
 	}
