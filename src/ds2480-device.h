@@ -1,7 +1,7 @@
 #ifndef __DS2480_DEVICE_H
 #define __DS2480_DEVICE_H
 
-#include "transport.h"
+#include "1-wire-bus.h"
 
 #define DS2480_MODE_INACTIVE				0
 #define DS2480_MODE_COMMAND				1
@@ -100,6 +100,8 @@ struct ds2480_device
 	int	state;
 	int	mode;
 	int	speed;
+
+	struct one_wire_bus bus;
 	struct ds2480_device_configuration config;
 };
 

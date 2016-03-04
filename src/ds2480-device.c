@@ -1,5 +1,6 @@
 #include <assert.h>
 #include "ibutton/ds2480.h"
+#include "1-wire-bus.h"
 #include "ds2480-device.h"
 #include "transport.h"
 
@@ -13,6 +14,8 @@ void ds2480_dev_init(struct ds2480_device *dev)
 	dev->config.sampleoffset     = DS2480_PARAM_SAMPLEOFFSET_VALUE_8us;
 	dev->config.activepulluptime = DS2480_PARAM_ACTIVEPULLUPTIME_VALUE_3p0us;
 	dev->config.baudrate         = DS2480_PARAM_BAUDRATE_VALUE_9600;
+
+	one_wire_bus_init(&dev->bus);
 }
 
 void ds2480_dev_reset(struct ds2480_device *dev, int speed)
@@ -190,9 +193,8 @@ ds2480_dev_data_mode(struct ds2480_device *dev, unsigned char byte)
 		return -2;
 	}
 
-	printf("%.2x\n", byte);
-
-	return byte;
+	one_wire_bus_tx_byte(&dev->bus, byte);
+	return one_wire_bus_rx_byte(&dev->bus);
 }
 
 static int
@@ -201,9 +203,9 @@ ds2480_dev_check_mode(struct ds2480_device *dev, unsigned char request)
 	assert(dev != NULL);
 
 	if (request == 0xE3) {
-		printf("DATA: %.2x\n", request);
 		dev->mode = DS2480_MODE_DATA;
-		return request;
+		one_wire_bus_tx_byte(&dev->bus, request);
+		return one_wire_bus_rx_byte(&dev->bus);
 	}
 
 	/* This is a command mode request.  Switch over. */
