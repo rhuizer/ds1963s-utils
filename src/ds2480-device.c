@@ -192,7 +192,7 @@ ds2480_dev_data_mode(struct ds2480_device *dev, unsigned char byte)
 
 	printf("%.2x\n", byte);
 
-	return -2;
+	return byte;
 }
 
 static int
@@ -203,7 +203,7 @@ ds2480_dev_check_mode(struct ds2480_device *dev, unsigned char request)
 	if (request == 0xE3) {
 		printf("DATA: %.2x\n", request);
 		dev->mode = DS2480_MODE_DATA;
-		return -2;
+		return request;
 	}
 
 	/* This is a command mode request.  Switch over. */
