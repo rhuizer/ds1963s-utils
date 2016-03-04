@@ -1,3 +1,11 @@
+/* ds2480-device.c
+ *
+ * A software implementation of the DS2480B serial to 1-wire driver.
+ *
+ * Dedicated to Yuzuyu Arielle Huizer.
+ *
+ *  -- Ronald Huizer, (C) 2016
+ */
 #include <assert.h>
 #include "ibutton/ds2480.h"
 #include "1-wire-bus.h"

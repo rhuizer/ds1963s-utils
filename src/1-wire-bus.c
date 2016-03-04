@@ -1,3 +1,11 @@
+/* 1-wire-bus.c
+ *
+ * A virtual 1-wire bus implementation.
+ *
+ * Dedicated to Yuzuyu Arielle Huizer.
+ *
+ *  -- Ronald Huizer, (C) 2016
+ */
 #include <assert.h>
 #include "1-wire-bus.h"
 

@@ -1,3 +1,11 @@
+/* transport-factory.c
+ *
+ * A factory for transport layer instances.
+ *
+ * Dedicated to Yuzuyu Arielle Huizer.
+ *
+ *  -- Ronald Huizer, (C) 2016
+ */
 #include "transport-factory.h"
 #include "transport-unix.h"
 

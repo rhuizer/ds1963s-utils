@@ -1,3 +1,11 @@
+/* transport-unix.c
+ *
+ * Transport layer UNIX socket implementation.
+ *
+ * Dedicated to Yuzuyu Arielle Huizer.
+ *
+ *  -- Ronald Huizer, (C) 2016
+ */
 #include <assert.h>
 #include <stdlib.h>
 #include <errno.h>

@@ -1,3 +1,11 @@
+/* transport.c
+ *
+ * Transport layer base class.
+ *
+ * Dedicated to Yuzuyu Arielle Huizer.
+ *
+ *  -- Ronald Huizer, (C) 2016
+ */
 #include <assert.h>
 #include "transport.h"
 
