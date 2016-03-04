@@ -162,10 +162,12 @@ ds2480_dev_command_mode(struct ds2480_device *dev, unsigned char byte)
 	/* Otherwise we use the top 3-bits to specify the operation. */
 	switch (byte >> 5) {
 	case DS2480_COMMAND_SINGLE_BIT:
+		dev->speed = __ds2480_speed_parse( (byte >> 2) & 3);
 		/* XXX: should handle this properly. */
 		return byte & ~3;
 	case DS2480_COMMAND_SEARCH_ACCELERATOR_CONTROL:
 		printf("SEARCH ACCELERATOR\n");
+		dev->speed = __ds2480_speed_parse( (byte >> 2) & 3);
 		return -2;
 	case DS2480_COMMAND_RESET:
 		speed = __ds2480_speed_parse( (byte >> 2) & 3);
