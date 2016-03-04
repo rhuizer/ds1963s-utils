@@ -108,7 +108,6 @@ extern "C" {
 #endif
 
 void ds2480_dev_init(struct ds2480_device *dev);
-int ds2480_dev_detect_handle(struct ds2480_device *dev, struct transport *t);
 
 #ifdef __cplusplus
 };

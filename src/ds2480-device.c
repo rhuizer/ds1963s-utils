@@ -216,7 +216,7 @@ static inline int __is_reset(unsigned char byte)
 	return (byte & 0xE3) == 0xC1;
 }
 
-int ds2480_dev_power_on(struct ds2480_device *dev, struct transport *t)
+int ds2480_dev_power_on(struct ds2480_device *dev, struct transport *serial)
 {
 	unsigned char request;
 	int response;
@@ -228,7 +228,7 @@ int ds2480_dev_power_on(struct ds2480_device *dev, struct transport *t)
 		return -1;
 
 	/* Handle the calibration byte. */
-	if (transport_read_all(t, &request, 1) == -1)
+	if (transport_read_all(serial, &request, 1) == -1)
 		return -1;
 
 	/* We expect a reset command, but will not respond. */
@@ -239,7 +239,7 @@ int ds2480_dev_power_on(struct ds2480_device *dev, struct transport *t)
 	dev->mode = DS2480_MODE_COMMAND;
 
 	while (dev->mode != DS2480_MODE_INACTIVE) {
-		if (transport_read_all(t, &request, 1) == -1)
+		if (transport_read_all(serial, &request, 1) == -1)
 			return -1;
 
 		switch (dev->mode) {
@@ -266,7 +266,7 @@ int ds2480_dev_power_on(struct ds2480_device *dev, struct transport *t)
 		if (response >= 0 && dev->mode != DS2480_MODE_INACTIVE) {
 			unsigned char res = (unsigned char)response;
 
-			if (transport_write_all(t, &res, 1) == -1)
+			if (transport_write_all(serial, &res, 1) == -1)
 				return -1;
 		}
 	}
