@@ -17,8 +17,6 @@ static ucontext_t cleanup_context;
 static struct coroutine *coro_current;
 static struct list_head active_list = LIST_HEAD_INIT(active_list);
 
-void f(struct coroutine *);
-
 int coroutine_init(struct coroutine *coro, void (*f)(struct coroutine *), size_t stack_size)
 {
 	void *stack;
@@ -89,25 +87,17 @@ int coroutine_yieldto(struct coroutine *coro, struct coroutine *other)
 int coroutine_return(struct coroutine *coro, void *data)
 {
 	struct coroutine *other;
-	ucontext_t *other_ctx;
 
-	/* If there is no coroutine waiting on this yield, schedule
-	 * the next routine from the active_list.
+	/* If there is no coroutine waiting on this yield, schedule the next
+	 * routine from the active_list.
 	 */
-	if (list_empty(&coro->yield_list)) {
-		if (list_empty(&active_list)) {
-			other_ctx = &main_context;
-		} else {
-			other = list_entry(active_list.next, struct coroutine, entry);
-			other_ctx = &other->context;
-		}
-	} else {
-		other = list_entry(coro->yield_list.next, struct coroutine, entry);
-		/* Remove the selected coroutine from the yield list. */
-		list_del(&other->entry);
-		list_add_tail(&other->entry, &active_list);
-		other_ctx = &other->context;
-	}
+	if (list_empty(&coro->yield_list))
+		return coroutine_yield(coro);
+
+	other = list_entry(coro->yield_list.next, struct coroutine, entry);
+	/* Remove the selected coroutine from the yield list. */
+	list_del(&other->entry);
+	list_add_tail(&other->entry, &active_list);
 
 	return coroutine_returnto(coro, other, data);
 }
@@ -165,7 +155,7 @@ int coroutine_main(void)
 	return 0;
 }
 
-/* XXX: TEST */
+#ifdef TEST
 struct coroutine coro_f;
 struct coroutine coro_g;
 struct coroutine coro_h;
@@ -191,6 +181,8 @@ void g(struct coroutine *coro)
 	printf("g: main.uc_link: %p\n", main_context.uc_link);
 	printf("g: cleanup: %p\n", &cleanup_context);
 	printf("g: link: %p\n", coro->context.uc_link);
+
+	coroutine_return(coro, NULL);
 }
 
 void h(struct coroutine *coro)
@@ -214,3 +206,4 @@ int main(void)
 	coroutine_main();
 	printf("back in main()\n");
 }
+#endif
