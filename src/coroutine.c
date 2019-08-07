@@ -1,0 +1,216 @@
+/* coroutine.c
+ *
+ * A small and simple coroutine library written in C.
+ * Dedicated to Yuzuyu Arielle Huizer.
+ *
+ *   -- Ronald Huizer <rhuizer@hexpedition.com> (C) 2016-2018
+ *
+ */
+#include <assert.h>
+#include <stdlib.h>
+#include <ucontext.h>
+#include "coroutine.h"
+#include "list.h"
+
+static ucontext_t main_context;
+static ucontext_t cleanup_context;
+static struct coroutine *coro_current;
+static struct list_head active_list = LIST_HEAD_INIT(active_list);
+
+void f(struct coroutine *);
+
+int coroutine_init(struct coroutine *coro, void (*f)(struct coroutine *), size_t stack_size)
+{
+	void *stack;
+
+	if (getcontext(&coro->context) == -1)
+		return -1;
+
+	if ( (stack = malloc(stack_size)) == NULL)
+		return -1;
+
+	coro->data			= NULL;
+	coro->context.uc_link           = &cleanup_context;
+	coro->context.uc_stack.ss_sp    = stack;
+	coro->context.uc_stack.ss_size  = stack_size;
+	coro->context.uc_stack.ss_flags = 0;
+	list_add(&coro->entry, &active_list);
+	list_init(&coro->yield_list);
+
+	makecontext(&coro->context, (void (*)())f, 1, coro);
+
+	return 0;
+}
+
+void *coroutine_await(struct coroutine *coro, struct coroutine *other)
+{
+	/* coroutine_await should not be called on an inactive coroutine. */
+	/* XXX: test this. */
+
+	/* Remove the coroutine waiting from the active_list. */
+	list_del(&coro->entry);
+
+	/* Insert the coroutine waiting into the yield list of the
+	 * coroutine it waits on.
+	 */
+	list_add_tail(&coro->entry, &other->yield_list);
+
+	coro_current = other;
+	if (swapcontext(&coro->context, &other->context) == -1)
+		return NULL;
+
+	return other->data;
+}
+
+/* Yield to an arbitrary other coroutine. */
+int coroutine_yield(struct coroutine *coro)
+{
+	struct coroutine *other;
+
+	/* Nothing to reschedule to, so we're done. */
+	if (list_empty(&active_list))
+		return 0;
+
+	other = list_entry(active_list.next, struct coroutine, entry);
+	return coroutine_yieldto(coro, other);
+}
+
+/* Yield to a specific other coroutine. */
+int coroutine_yieldto(struct coroutine *coro, struct coroutine *other)
+{
+	coro_current = other;
+	if (swapcontext(&coro->context, &other->context) == -1)
+		return -1;
+
+	return 0;
+}
+
+/* Return data to a coroutine waiting for this one. */
+int coroutine_return(struct coroutine *coro, void *data)
+{
+	struct coroutine *other;
+	ucontext_t *other_ctx;
+
+	/* If there is no coroutine waiting on this yield, schedule
+	 * the next routine from the active_list.
+	 */
+	if (list_empty(&coro->yield_list)) {
+		if (list_empty(&active_list)) {
+			other_ctx = &main_context;
+		} else {
+			other = list_entry(active_list.next, struct coroutine, entry);
+			other_ctx = &other->context;
+		}
+	} else {
+		other = list_entry(coro->yield_list.next, struct coroutine, entry);
+		/* Remove the selected coroutine from the yield list. */
+		list_del(&other->entry);
+		list_add_tail(&other->entry, &active_list);
+		other_ctx = &other->context;
+	}
+
+	return coroutine_returnto(coro, other, data);
+}
+
+int coroutine_returnto(struct coroutine *coro, struct coroutine *other, void *data)
+{
+	/* XXX: Would like to test if 'other' on yield_list of 'coro' ... */
+	coro->data = data;
+
+	coro_current = other;
+	if (swapcontext(&coro->context, &other->context) == -1)
+		return -1;
+
+	return 0;
+}
+
+void coroutine_destroy(struct coroutine *coro)
+{
+	list_del(&coro->entry);
+	free(coro->context.uc_stack.ss_sp);
+}
+
+void coroutine_end(void)
+{
+	coroutine_destroy(coro_current);
+}
+
+int coroutine_main(void)
+{
+	unsigned char stack[1024];
+	struct coroutine *coro;
+
+	/* This is the place where we store and will return to the main
+	 * context once the active_list is empty.  We cannoy modify the
+	 * context after we set it in the uc_link of another context which
+	 * we then makecontext(), so this has to be done here.
+	 */
+	getcontext(&main_context);
+	if (list_empty(&active_list))
+		return 0;
+
+	getcontext(&cleanup_context);
+	cleanup_context.uc_link           = &main_context;
+	cleanup_context.uc_stack.ss_sp    = stack;
+	cleanup_context.uc_stack.ss_size  = sizeof(stack);
+	cleanup_context.uc_stack.ss_flags = 0;
+	makecontext(&cleanup_context, coroutine_end, 0);
+
+	while (!list_empty(&active_list)) {
+		coro = list_entry(active_list.next, struct coroutine, entry);
+		coro_current = coro;
+		setcontext(&coro->context);
+	}
+
+	return 0;
+}
+
+/* XXX: TEST */
+struct coroutine coro_f;
+struct coroutine coro_g;
+struct coroutine coro_h;
+
+void f(struct coroutine *coro)
+{
+	int i;
+
+	for (i = 0; i < 50; i++) {
+		printf("coroutine f\n");
+		coroutine_return(coro, (void *)i);
+		printf("after yield\n");
+	}
+}
+
+void g(struct coroutine *coro)
+{
+	void *ret;
+	int i;
+
+	printf("coroutine g\n");
+	printf("g: main: %p\n", &main_context);
+	printf("g: main.uc_link: %p\n", main_context.uc_link);
+	printf("g: cleanup: %p\n", &cleanup_context);
+	printf("g: link: %p\n", coro->context.uc_link);
+}
+
+void h(struct coroutine *coro)
+{
+	void *ret;
+	int i;
+
+	for (i = 0; i < 50; i++) {
+		printf("coroutine h\n");
+		ret = coroutine_await(coro, &coro_f);
+		printf("coroutine h got: %d\n", ret);
+	}
+}
+
+int main(void)
+{
+	coroutine_init(&coro_f, f, 65536);
+	coroutine_init(&coro_g, g, 65536);
+	coroutine_init(&coro_h, h, 65536);
+
+	coroutine_main();
+	printf("back in main()\n");
+}
