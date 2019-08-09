@@ -10,7 +10,11 @@
 #include <stdlib.h>
 #include <ucontext.h>
 #include "coroutine.h"
+#include "debug.h"
 #include "list.h"
+#ifdef DEBUG
+#include <valgrind/valgrind.h>
+#endif
 
 static size_t stack_size = 65536;
 static ucontext_t main_context;
@@ -18,16 +22,17 @@ static ucontext_t cleanup_context;
 static struct coroutine *coro_current;
 static struct list_head active_list = LIST_HEAD_INIT(active_list);
 
-int coroutine_init(struct coroutine *coro, void (*f)(struct coroutine *, void *), void *cookie)
+int coroutine_init(struct coroutine *coro, coroutine_handler_t f, void *cookie)
 {
-	void *stack;
+	unsigned char *stack;
 
 	if (getcontext(&coro->context) == -1)
 		return -1;
 
-	if ( (stack = malloc(stack_size)) == NULL)
+	if ( (stack = calloc(1, stack_size)) == NULL)
 		return -1;
 
+	coro->cookie                    = cookie;
 	coro->data			= NULL;
 	coro->context.uc_link           = &cleanup_context;
 	coro->context.uc_stack.ss_sp    = stack;
@@ -36,7 +41,11 @@ int coroutine_init(struct coroutine *coro, void (*f)(struct coroutine *, void *)
 	list_add(&coro->entry, &active_list);
 	list_init(&coro->yield_list);
 
-	makecontext(&coro->context, (void (*)())f, 2, coro, cookie);
+#ifdef DEBUG
+	coro->valgrind_stack_id = VALGRIND_STACK_REGISTER(stack, stack + stack_size);
+#endif
+
+	makecontext(&coro->context, (void (*)())f, 1, coro);
 
 	return 0;
 }
@@ -87,6 +96,9 @@ int coroutine_yield(struct coroutine *coro)
 /* Yield to a specific other coroutine. */
 int coroutine_yieldto(struct coroutine *coro, struct coroutine *other)
 {
+	assert(coro != NULL);
+	assert(other != NULL);
+
 	coroutine_reschedule(other);
 	if (swapcontext(&coro->context, &other->context) == -1)
 		return -1;
@@ -128,6 +140,9 @@ int coroutine_returnto(struct coroutine *coro, struct coroutine *other, void *da
 
 void coroutine_destroy(struct coroutine *coro)
 {
+#ifdef DEBUG
+	VALGRIND_STACK_DEREGISTER(coro->valgrind_stack_id);
+#endif
 	list_del(&coro->entry);
 	free(coro->context.uc_stack.ss_sp);
 }
@@ -139,8 +154,9 @@ void coroutine_end(void)
 
 int coroutine_main(void)
 {
-	unsigned char stack[1024];
+	static unsigned char stack[65536];
 	struct coroutine *coro;
+	int id;
 
 	/* This is the place where we store and will return to the main
 	 * context once the active_list is empty.  We cannoy modify the
@@ -156,6 +172,9 @@ int coroutine_main(void)
 	cleanup_context.uc_stack.ss_sp    = stack;
 	cleanup_context.uc_stack.ss_size  = sizeof(stack);
 	cleanup_context.uc_stack.ss_flags = 0;
+#ifdef DEBUG
+	id = VALGRIND_STACK_REGISTER(stack, stack + sizeof stack);
+#endif
 	makecontext(&cleanup_context, coroutine_end, 0);
 
 	/* Main loop; this is only relevant when coroutine_end is called,
@@ -167,6 +186,9 @@ int coroutine_main(void)
 		setcontext(&coro->context);
 	}
 
+#ifdef DEBUG
+	VALGRIND_STACK_DEREGISTER(id);
+#endif
 	return 0;
 }
 

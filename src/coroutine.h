@@ -2,20 +2,22 @@
 #define __COROUTINE_H
 
 #include <ucontext.h>
+#include "debug.h"
 #include "list.h"
 
 struct coroutine
 {
-#ifdef DEBUG
-	char			*name;
-#endif
-	ucontext_t		context;
+	void			*cookie;
 	void			*data;
 	struct list_head	entry;
 	struct list_head	yield_list;
+	ucontext_t		context;
+#ifdef DEBUG
+	int			valgrind_stack_id;
+#endif
 };
 
-typedef void (*coroutine_handler_t)(struct coroutine *, void *);
+typedef void (*coroutine_handler_t)(struct coroutine *);
 
 #ifdef __cplusplus
 extern "C" {
