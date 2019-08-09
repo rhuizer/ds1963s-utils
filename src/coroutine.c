@@ -12,12 +12,13 @@
 #include "coroutine.h"
 #include "list.h"
 
+static size_t stack_size = 65536;
 static ucontext_t main_context;
 static ucontext_t cleanup_context;
 static struct coroutine *coro_current;
 static struct list_head active_list = LIST_HEAD_INIT(active_list);
 
-int coroutine_init(struct coroutine *coro, void (*f)(struct coroutine *), size_t stack_size)
+int coroutine_init(struct coroutine *coro, void (*f)(struct coroutine *, void *), void *cookie)
 {
 	void *stack;
 
@@ -35,9 +36,16 @@ int coroutine_init(struct coroutine *coro, void (*f)(struct coroutine *), size_t
 	list_add(&coro->entry, &active_list);
 	list_init(&coro->yield_list);
 
-	makecontext(&coro->context, (void (*)())f, 1, coro);
+	makecontext(&coro->context, (void (*)())f, 2, coro, cookie);
 
 	return 0;
+}
+
+void coroutine_reschedule(struct coroutine *coro)
+{
+	coro_current = coro;
+	list_del(&coro->entry);
+	list_add_tail(&coro->entry, &active_list);
 }
 
 void *coroutine_await(struct coroutine *coro, struct coroutine *other)
@@ -53,9 +61,12 @@ void *coroutine_await(struct coroutine *coro, struct coroutine *other)
 	 */
 	list_add_tail(&coro->entry, &other->yield_list);
 
-	coro_current = other;
+	coroutine_reschedule(other);
 	if (swapcontext(&coro->context, &other->context) == -1)
 		return NULL;
+
+	/* Take it from the yield list and reschedule. */
+	coroutine_reschedule(coro);
 
 	return other->data;
 }
@@ -76,7 +87,7 @@ int coroutine_yield(struct coroutine *coro)
 /* Yield to a specific other coroutine. */
 int coroutine_yieldto(struct coroutine *coro, struct coroutine *other)
 {
-	coro_current = other;
+	coroutine_reschedule(other);
 	if (swapcontext(&coro->context, &other->context) == -1)
 		return -1;
 
@@ -95,6 +106,7 @@ int coroutine_return(struct coroutine *coro, void *data)
 		return coroutine_yield(coro);
 
 	other = list_entry(coro->yield_list.next, struct coroutine, entry);
+
 	/* Remove the selected coroutine from the yield list. */
 	list_del(&other->entry);
 	list_add_tail(&other->entry, &active_list);
@@ -107,7 +119,7 @@ int coroutine_returnto(struct coroutine *coro, struct coroutine *other, void *da
 	/* XXX: Would like to test if 'other' on yield_list of 'coro' ... */
 	coro->data = data;
 
-	coro_current = other;
+	coroutine_reschedule(other);
 	if (swapcontext(&coro->context, &other->context) == -1)
 		return -1;
 
@@ -146,9 +158,12 @@ int coroutine_main(void)
 	cleanup_context.uc_stack.ss_flags = 0;
 	makecontext(&cleanup_context, coroutine_end, 0);
 
-	while (!list_empty(&active_list)) {
+	/* Main loop; this is only relevant when coroutine_end is called,
+	 * as that is the only way we will reenter the cleanup_context above.
+	 */
+	if (!list_empty(&active_list)) {
 		coro = list_entry(active_list.next, struct coroutine, entry);
-		coro_current = coro;
+		coroutine_reschedule(coro);
 		setcontext(&coro->context);
 	}
 
@@ -160,9 +175,11 @@ struct coroutine coro_f;
 struct coroutine coro_g;
 struct coroutine coro_h;
 
-void f(struct coroutine *coro)
+void f(struct coroutine *coro, void *cookie)
 {
 	int i;
+
+	printf("cookie: %p\n", cookie);
 
 	for (i = 0; i < 50; i++) {
 		printf("coroutine f\n");
@@ -171,7 +188,7 @@ void f(struct coroutine *coro)
 	}
 }
 
-void g(struct coroutine *coro)
+void g(struct coroutine *coro, void *cookie)
 {
 	void *ret;
 	int i;
@@ -185,7 +202,7 @@ void g(struct coroutine *coro)
 	coroutine_return(coro, NULL);
 }
 
-void h(struct coroutine *coro)
+void h(struct coroutine *coro, void *cookie)
 {
 	void *ret;
 	int i;
@@ -199,9 +216,9 @@ void h(struct coroutine *coro)
 
 int main(void)
 {
-	coroutine_init(&coro_f, f, 65536);
-	coroutine_init(&coro_g, g, 65536);
-	coroutine_init(&coro_h, h, 65536);
+	coroutine_init(&coro_f, f, 0x41414141);
+	coroutine_init(&coro_g, g, NULL);
+	coroutine_init(&coro_h, h, NULL);
 
 	coroutine_main();
 	printf("back in main()\n");
