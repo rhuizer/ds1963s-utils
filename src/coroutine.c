@@ -1,10 +1,28 @@
 /* coroutine.c
  *
  * A small and simple coroutine library written in C.
+ *
  * Dedicated to Yuzuyu Arielle Huizer.
  *
- *   -- Ronald Huizer <rhuizer@hexpedition.com> (C) 2016-2018
+ * Copyright (C) 2016-2019  Ronald Huizer <rhuizer@hexpedition.com>
  *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 #include <assert.h>
 #include <stdlib.h>
@@ -12,6 +30,7 @@
 #include "coroutine.h"
 #include "debug.h"
 #include "list.h"
+
 #ifdef DEBUG
 #include <valgrind/valgrind.h>
 #endif
@@ -29,7 +48,7 @@ int coroutine_init(struct coroutine *coro, coroutine_handler_t f, void *cookie)
 	if (getcontext(&coro->context) == -1)
 		return -1;
 
-	if ( (stack = calloc(1, stack_size)) == NULL)
+	if ( (stack = malloc(stack_size)) == NULL)
 		return -1;
 
 	coro->cookie                    = cookie;
@@ -38,11 +57,11 @@ int coroutine_init(struct coroutine *coro, coroutine_handler_t f, void *cookie)
 	coro->context.uc_stack.ss_sp    = stack;
 	coro->context.uc_stack.ss_size  = stack_size;
 	coro->context.uc_stack.ss_flags = 0;
-	list_add(&coro->entry, &active_list);
+	list_add_tail(&coro->entry, &active_list);
 	list_init(&coro->yield_list);
 
 #ifdef DEBUG
-	coro->valgrind_stack_id = VALGRIND_STACK_REGISTER(stack, stack + stack_size);
+	coro->stack_id = VALGRIND_STACK_REGISTER(stack, stack + stack_size);
 #endif
 
 	makecontext(&coro->context, (void (*)())f, 1, coro);
@@ -141,7 +160,7 @@ int coroutine_returnto(struct coroutine *coro, struct coroutine *other, void *da
 void coroutine_destroy(struct coroutine *coro)
 {
 #ifdef DEBUG
-	VALGRIND_STACK_DEREGISTER(coro->valgrind_stack_id);
+	VALGRIND_STACK_DEREGISTER(coro->stack_id);
 #endif
 	list_del(&coro->entry);
 	free(coro->context.uc_stack.ss_sp);
@@ -197,11 +216,11 @@ struct coroutine coro_f;
 struct coroutine coro_g;
 struct coroutine coro_h;
 
-void f(struct coroutine *coro, void *cookie)
+void f(struct coroutine *coro)
 {
 	int i;
 
-	printf("cookie: %p\n", cookie);
+	printf("cookie: %p\n", coro->cookie);
 
 	for (i = 0; i < 50; i++) {
 		printf("coroutine f\n");
@@ -210,7 +229,7 @@ void f(struct coroutine *coro, void *cookie)
 	}
 }
 
-void g(struct coroutine *coro, void *cookie)
+void g(struct coroutine *coro)
 {
 	void *ret;
 	int i;
@@ -224,7 +243,7 @@ void g(struct coroutine *coro, void *cookie)
 	coroutine_return(coro, NULL);
 }
 
-void h(struct coroutine *coro, void *cookie)
+void h(struct coroutine *coro)
 {
 	void *ret;
 	int i;
