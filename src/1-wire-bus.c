@@ -31,7 +31,7 @@ __one_wire_bus_cycle(struct one_wire_bus *bus)
 
 	assert(bus != NULL);
 
-	DEBUG_LOG("[1-wire-bus] New cycle\n");
+	DEBUG_LOG("[1-wire-bus] cycle #%"PRIu64"\n", bus->cycle++);
 
 	/* If we have no members, there is nothing to drive anything so we
 	 * just terminate.

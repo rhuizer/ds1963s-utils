@@ -22,6 +22,7 @@
 #ifndef __1_WIRE_BUS_H
 #define __1_WIRE_BUS_H
 
+#include <inttypes.h>
 #include "coroutine.h"
 #include "debug.h"
 #include "list.h"
@@ -54,9 +55,12 @@ struct one_wire_bus_member
 
 struct one_wire_bus
 {
-	struct list_head            members;
-	struct coroutine            coro;
-	int                         signal;
+	struct list_head members;
+	struct coroutine coro;
+	int              signal;
+#ifdef DEBUG
+	uint64_t         cycle;
+#endif
 };
 
 #ifdef __cplusplus
