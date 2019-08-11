@@ -4,12 +4,26 @@
  *
  * Dedicated to Yuzuyu Arielle Huizer.
  *
- * -- Ronald Huizer / r.huizer@xs4all.nl / 2013-2016
+ * Copyright (C) 2016-2019  Ronald Huizer <rhuizer@hexpedition.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include "ds1963s-common.h"
 #include "ds1963s-device.h"
 #include "getput.h"
 #include "sha1.h"
@@ -120,15 +134,42 @@ static void __sha1_get_output_1(uint8_t SP[32], uint32_t A, uint32_t B,
 void ds1963s_dev_init(struct ds1963s_device *ds1963s)
 {
 	memset(ds1963s, 0, sizeof *ds1963s);
+
 	ds1963s->family = DS1963S_DEVICE_FAMILY;
-	memset(ds1963s->data_memory, 0xaa, sizeof ds1963s->data_memory);
+	memset(ds1963s->data_memory,   0xaa, sizeof ds1963s->data_memory);
 	memset(ds1963s->secret_memory, 0xaa, sizeof ds1963s->secret_memory);
-	memset(ds1963s->scratchpad, 0xff, sizeof ds1963s->scratchpad);
+	memset(ds1963s->scratchpad,    0xff, sizeof ds1963s->scratchpad);
+
+	one_wire_bus_member_init(&ds1963s->bus_slave);
+        ds1963s->bus_slave.device = (void *)ds1963s;
+        ds1963s->bus_slave.driver = (void(*)(void *))ds1963s_dev_power_on;
+
+#ifdef DEBUG
+	strncpy(ds1963s->bus_slave.name, "ds1963s", sizeof ds1963s->bus_slave.name);
+#endif
 }
 
 void ds1963s_dev_destroy(struct ds1963s_device *ds1963s)
 {
+	assert(ds1963s != NULL);
+
+	list_del(&ds1963s->bus_slave.list_entry);
 	memset(ds1963s, 0, sizeof *ds1963s);
+}
+
+void
+ds1963s_dev_rom_code_get(struct ds1963s_device *ds1963s, uint8_t buf[8])
+{
+	buf[0] = ds1963s->family;
+	memcpy(&buf[1], ds1963s->serial, 6);
+	buf[7] = ds1963s_crc8(buf, 7);
+}
+
+void ds1963s_dev_connect_bus(struct ds1963s_device *ds1963s, struct one_wire_bus *bus)
+{
+	assert(ds1963s != NULL);
+
+	one_wire_bus_member_add(bus, &ds1963s->bus_slave);
 }
 
 void ds1963s_dev_erase_scratchpad(struct ds1963s_device *ds1963s, int address)
@@ -295,6 +336,164 @@ void ds1963s_dev_sign_data_page(struct ds1963s_device *ds1963s)
 		ctx.state[3] - 0x10325476,
 		ctx.state[4] - 0xC3D2E1F0
 	);
+}
+
+static inline int
+ds1963s_dev_rx_bit(struct ds1963s_device *dev)
+{
+	int bit;
+
+	bit = one_wire_bus_member_rx_bit(&dev->bus_slave);
+
+	if (bit == -1)
+		dev->state = DS1963S_STATE_RESET;
+
+	return bit;
+}
+
+static inline int
+ds1963s_dev_rx_byte(struct ds1963s_device *dev)
+{
+	int byte;
+
+	byte = one_wire_bus_member_rx_byte(&dev->bus_slave);
+
+	if (byte == -1)
+		dev->state = DS1963S_STATE_RESET;
+
+	return byte;
+}
+
+static inline void
+ds1963s_dev_tx_bit(struct ds1963s_device *dev, int bit)
+{
+	one_wire_bus_member_tx_bit(&dev->bus_slave, bit);
+}
+
+static inline void
+ds1963s_dev_tx_byte(struct ds1963s_device *dev, int byte)
+{
+	for (int i = 0; i < 8; i++)
+		ds1963s_dev_tx_bit(dev, (byte >> i) & 1);
+}
+
+int ds1963s_dev_rom_command_search_rom(struct ds1963s_device *dev)
+{
+	uint8_t rom_code[8];
+
+	ds1963s_dev_rom_code_get(dev, rom_code);
+
+	for (int i = 0; i < sizeof(rom_code); i++) {
+		for (int j = 0; j < 8; j++) {
+			int mb;
+			int b1 = (rom_code[i] >> j) & 1;
+			int b2 = !b1;
+
+			ds1963s_dev_tx_bit(dev, b1);
+			ds1963s_dev_tx_bit(dev, b2);
+			mb = ds1963s_dev_rx_bit(dev);
+			DEBUG_LOG("search rom bit #%d: %d\n", i * 8 + j, mb);
+
+			if (mb == ONE_WIRE_BUS_SIGNAL_RESET) {
+				dev->state = DS1963S_STATE_RESET;
+				return -1;
+			}
+
+			/* Special case.  On mismatch we wait for reset. */
+			if (mb != b1) {
+				DEBUG_LOG("mismatch: expected %d got %d\n", b1, mb);
+				dev->state = DS1963S_STATE_RESET_WAIT;
+				return -1;
+			}
+		}
+	}
+
+	DEBUG_LOG("search rom match\n");
+
+	return 0;
+}
+
+void
+ds1963s_dev_rom_function(struct ds1963s_device *dev)
+{
+	int byte;
+
+	byte = ds1963s_dev_rx_byte(dev);
+
+	switch (byte) {
+	case ONE_WIRE_BUS_SIGNAL_RESET:
+		DEBUG_LOG("[ds1963s|ROM] Received reset pulse\n");
+		break;
+	case 0xF0:
+		DEBUG_LOG("[ds1963s|ROM] Search ROM Command\n");
+		if (ds1963s_dev_rom_command_search_rom(dev) != 0)
+			break;
+
+		dev->state = DS1963S_STATE_MEMORY_FUNCTION;
+		break;
+	default:
+		DEBUG_LOG("[ds1963s|ROM] Unknown command %.2x\n", byte);
+		break;
+	}
+}
+
+void ds1963s_dev_memory_function(struct ds1963s_device *dev)
+{
+	int byte;
+
+	byte = ds1963s_dev_rx_byte(dev);
+
+	switch (byte) {
+	case ONE_WIRE_BUS_SIGNAL_RESET:
+		DEBUG_LOG("[ds1963s|MEMORY] Received reset pulse\n");
+		break;
+	case 0xF0:
+		DEBUG_LOG("[ds1963s|MEMORY] Read Memory\n");
+		break;
+	default:
+		DEBUG_LOG("[ds1963s|MEMORY] Unknown command %.2x\n", byte);
+		break;
+	}
+}
+
+int ds1963s_dev_power_on(struct ds1963s_device *dev)
+{
+        assert(dev != NULL);
+
+	while (1) {
+		switch(dev->state) {
+		case DS1963S_STATE_INITIAL:
+			DEBUG_LOG("[ds1963s|INITIAL] power on\n");
+			dev->state = DS1963S_STATE_RESET_WAIT;
+			break;
+		case DS1963S_STATE_RESET_WAIT:
+			DEBUG_LOG("[ds1963s|RESET_WAIT] waiting on reset\n");
+			/* We ignore things until we see a reset pulse. */
+			while (one_wire_bus_member_rx_bit(&dev->bus_slave) != -1)
+				break;
+
+			DEBUG_LOG("[ds1963s|RESET_WAIT] Received reset pulse...\n");
+			dev->state = DS1963S_STATE_RESET;
+			break;
+		case DS1963S_STATE_RESET:
+
+#if 0			/* XXX: hack */
+			ds1963s_dev_rx_bit(dev);
+			DEBUG_LOG("[ds1963s|RESET] Sending presence pulse\n");
+			ds1963s_dev_tx_bit(dev, 1);
+#endif
+			dev->state = DS1963S_STATE_ROM_FUNCTION;
+			break;
+		case DS1963S_STATE_ROM_FUNCTION:
+			ds1963s_dev_rom_function(dev);
+			break;
+		case DS1963S_STATE_MEMORY_FUNCTION:
+			ds1963s_dev_memory_function(dev);
+			break;
+		}
+	}
+
+	return 0;
 }
 
 #ifdef DS1963S_DEVICE_TEST

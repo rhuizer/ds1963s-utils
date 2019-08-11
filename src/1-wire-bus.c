@@ -28,6 +28,7 @@ static inline int
 __one_wire_bus_cycle(struct one_wire_bus *bus)
 {
 	struct list_head *lh;
+	int signal;
 
 	assert(bus != NULL);
 
@@ -39,51 +40,36 @@ __one_wire_bus_cycle(struct one_wire_bus *bus)
 	if (list_empty(&bus->members))
 		return -1;
 
+	/* Default to a 1 signalled by positive voltage. */
+	signal = ONE_WIRE_BUS_SIGNAL_ONE;
+
 	/* In a single bus cycle, we first iterate over all members that are
 	 * not yet accessing the bus.  To keep every member in lock-step it
 	 * is necessary to wait until every member is accessing the bus for
 	 * either read or write operations.
 	 */
 	list_for_each (lh, &bus->members) {
+		int tmp;
 		struct one_wire_bus_member *m =
 			list_entry(lh, struct one_wire_bus_member, list_entry);
 
 		if (m->bus_access != ONE_WIRE_BUS_ACCESS_NONE)
 			continue;
 
-		coroutine_yieldto(&bus->coro, &m->coro);
-	}
-
-	/* We now let all writers write what they have to the bus. */
-	list_for_each (lh, &bus->members) {
-		struct one_wire_bus_member *m =
-			list_entry(lh, struct one_wire_bus_member, list_entry);
-
-		if (m->bus_access != ONE_WIRE_BUS_ACCESS_WRITE)
-			continue;
-
-		coroutine_yieldto(&bus->coro, &m->coro);
-
-		/* Writers will hang on the second yield, so we set them to
-		 * NONE to reschedule them.
+		/* The 1-wire signal is a logical and over all devices on the
+		 * line.  If one pulls the line low, it will be low.
 		 */
-		m->bus_access = ONE_WIRE_BUS_ACCESS_NONE;
+		tmp = (int)(intptr_t)coroutine_await(&bus->coro, &m->coro);
+		if (tmp == -1)
+			signal = -1;
+		else
+			signal &= tmp;
+
+		DEBUG_LOG("[1-wire-bus] %s signal %d\n", m->name, signal);
 	}
 
-	/* Finally we schedule all readers so they can consume the bus data. */
-	list_for_each (lh, &bus->members) {
-		struct one_wire_bus_member *m =
-			list_entry(lh, struct one_wire_bus_member, list_entry);
-
-		if (m->bus_access == ONE_WIRE_BUS_ACCESS_READ)
-			coroutine_yieldto(&bus->coro, &m->coro);
-	}
-
-	/* It's possible there are only readers on a cycle.  This does not
-	 * deadlock things but rather keep the logical signal level.  This
-	 * does mean we need to reset it every cycle.
-	 */
-	bus->signal = ONE_WIRE_BUS_SIGNAL_ZERO;
+	bus->signal = signal;
+	DEBUG_LOG("[1-wire-bus] final bus signal %d\n", bus->signal);
 
 	return 0;
 }
@@ -120,7 +106,7 @@ void one_wire_bus_init(struct one_wire_bus *bus)
 	assert(bus != NULL);
 
 	memset(bus, 0, sizeof *bus);
-	bus->signal = ONE_WIRE_BUS_SIGNAL_ZERO;
+	bus->signal = ONE_WIRE_BUS_SIGNAL_ONE;
 	list_init(&bus->members);
 	coroutine_init(&bus->coro, __one_wire_bus_coroutine, bus);
 }
@@ -150,45 +136,29 @@ int one_wire_bus_member_add(struct one_wire_bus *bus, struct one_wire_bus_member
 	return 0;
 }
 
-void one_wire_bus_member_tx_bit(struct one_wire_bus_member *member, int bit)
+int
+one_wire_bus_member_tx_bit(struct one_wire_bus_member *member, int bit)
 {
 	assert(member != NULL);
 	assert(member->bus != NULL);
 	assert(bit == 0 || bit == 1);
 
-	/* We have marked this member as a bus writer for the current cycle
-	 * and yield.  This is necessary because we need to keep readers
-	 * that turns into writers in check.
-	 */
-	member->bus_access = ONE_WIRE_BUS_ACCESS_WRITE;
-	coroutine_yieldto(&member->coro, &member->bus->coro);
-
-	DEBUG_LOG("[1-wire-bus] %s tx %d\n", member->name, bit);
-
-	if (bit == 0)
-		member->bus->signal = ONE_WIRE_BUS_SIGNAL_ZERO;
-	else
-		member->bus->signal = ONE_WIRE_BUS_SIGNAL_ONE;
-
-	coroutine_yieldto(&member->coro, &member->bus->coro);
+	coroutine_returnto(&member->coro, &member->bus->coro, (void *)(intptr_t)bit);
+	DEBUG_LOG("[1-wire-bus] %s tx %d rx %d\n", member->name, bit, member->bus->signal);
+	return member->bus->signal;
 }
 
-int one_wire_bus_member_rx_bit(struct one_wire_bus_member *member)
+int
+one_wire_bus_member_rx_bit(struct one_wire_bus_member *member)
 {
-	int ret;
-
 	assert(member != NULL);
 	assert(member->bus != NULL);
 
-	member->bus_access = ONE_WIRE_BUS_ACCESS_READ;
-	coroutine_yieldto(&member->coro, &member->bus->coro);
+	coroutine_returnto(&member->coro, &member->bus->coro, (void *)1);
 
-	if ( (ret = member->bus->signal) >= 0)
-		ret = !ret;
+	DEBUG_LOG("[1-wire-bus] %s rx %d\n", member->name, member->bus->signal);
 
-	DEBUG_LOG("[1-wire-bus] %s rx %d\n", member->name, ret);
-
-	return ret;
+	return member->bus->signal;
 }
 
 void
@@ -197,11 +167,8 @@ one_wire_bus_member_reset_pulse(struct one_wire_bus_member *member)
 	assert(member != NULL);
 	assert(member->bus != NULL);
 
-	member->bus_access  = ONE_WIRE_BUS_ACCESS_WRITE;
-	coroutine_yieldto(&member->coro, &member->bus->coro);
+	coroutine_returnto(&member->coro, &member->bus->coro, (void *)-1);
 	DEBUG_LOG("[1-wire-bus] %s tx reset pulse\n", member->name);
-	member->bus->signal = ONE_WIRE_BUS_SIGNAL_RESET;
-	coroutine_yieldto(&member->coro, &member->bus->coro);
 }
 
 int one_wire_bus_member_rx_byte(struct one_wire_bus_member *member)
@@ -222,13 +189,18 @@ int one_wire_bus_member_rx_byte(struct one_wire_bus_member *member)
 	return result;
 }
 
-void
+int
 one_wire_bus_member_tx_byte(struct one_wire_bus_member *member, int byte)
 {
-	int i;
+	int result = 0;
+	int bit;
 
-	for (i = 0; i < 8; i++)
-		one_wire_bus_member_tx_bit(member, (byte >> i) & 1);
+	for (int i = 0; i < 8; i++) {
+		bit = one_wire_bus_member_tx_bit(member, (byte >> i) & 1);
+		result |= bit << i;
+	}
+
+	return result;
 }
 
 int one_wire_bus_run(struct one_wire_bus *bus)

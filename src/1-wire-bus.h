@@ -29,8 +29,8 @@
 
 /* Do not redefine these three, it will break things. */
 #define ONE_WIRE_BUS_SIGNAL_RESET	-1
-#define ONE_WIRE_BUS_SIGNAL_ZERO	1
-#define ONE_WIRE_BUS_SIGNAL_ONE		0
+#define ONE_WIRE_BUS_SIGNAL_ZERO	0
+#define ONE_WIRE_BUS_SIGNAL_ONE		1
 
 #define ONE_WIRE_BUS_ACCESS_NONE	0
 #define ONE_WIRE_BUS_ACCESS_READ	1
@@ -42,9 +42,9 @@ typedef void (*bus_device_driver_t)(void *);
 
 struct one_wire_bus_member
 {
+	struct coroutine     coro;
 	struct one_wire_bus *bus;
 	struct list_head     list_entry;
-	struct coroutine     coro;
 	int	             bus_access;
 	void *               device;
 	bus_device_driver_t  driver;
@@ -74,10 +74,16 @@ void one_wire_bus_member_init(struct one_wire_bus_member *member);
 int  one_wire_bus_member_add(struct one_wire_bus *, struct one_wire_bus_member *);
 
 void one_wire_bus_member_reset_pulse(struct one_wire_bus_member *);
-void one_wire_bus_member_tx_bit(struct one_wire_bus_member *, int);
+int  one_wire_bus_member_tx_bit(struct one_wire_bus_member *, int);
 int  one_wire_bus_member_rx_bit(struct one_wire_bus_member *);
 int  one_wire_bus_member_rx_byte(struct one_wire_bus_member *);
-void one_wire_bus_member_tx_byte(struct one_wire_bus_member *, int);
+int  one_wire_bus_member_tx_byte(struct one_wire_bus_member *, int);
+
+void one_wire_bus_member_write_bit(struct one_wire_bus_member *member, int bit);
+void one_wire_bus_member_write_byte(struct one_wire_bus_member *member, int byte);
+int  one_wire_bus_member_read_bit(struct one_wire_bus_member *member, int bit);
+int  one_wire_bus_member_read_byte(struct one_wire_bus_member *member, int byte);
+
 
 #ifdef __cplusplus
 };

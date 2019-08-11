@@ -1,7 +1,32 @@
+/* ds2480b-device.h
+ *
+ * A software implementation of the DS2480B serial to 1-wire driver.
+ *
+ * Dedicated to Yuzuyu Arielle Huizer.
+ *
+ * Copyright (C) 2016-2019  Ronald Huizer <rhuizer@hexpedition.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 #ifndef __DS2480_DEVICE_H
 #define __DS2480_DEVICE_H
 
 #include "1-wire-bus.h"
+
+#define DS2480_COMMAND					0x81
+#define DS2480_CONFIG					0x01
+#define DS2480_COMMAND_MASK				0x81
 
 #define DS2480_MODE_INACTIVE				0
 #define DS2480_MODE_COMMAND				1
@@ -17,6 +42,7 @@
 #define DS2480_COMMAND_RESET				6
 #define DS2480_COMMAND_PULSE				7
 
+#define DS2480_PARAM_PARMREAD				0
 #define DS2480_PARAM_SLEW				1
 #define DS2480_PARAM_12VPULSE				2
 #define DS2480_PARAM_5VPULSE				3
@@ -84,7 +110,7 @@
 #define DS2480_PARAM_BAUDRATE_VALUE_57600		2
 #define DS2480_PARAM_BAUDRATE_VALUE_115200		3
 
-struct ds2480_device_configuration
+struct ds2480b_device_configuration
 {
 	int	slew;
 	int	pulse12v;
@@ -95,21 +121,31 @@ struct ds2480_device_configuration
 	int	baudrate;
 };
 
-struct ds2480_device
+struct ds2480b_device
 {
-	int	state;
+	int	accelerator;
 	int	mode;
 	int	speed;
+	struct ds2480b_device_configuration config;
 
-	struct one_wire_bus bus;
-	struct ds2480_device_configuration config;
+	/* 1-wire bus the ds2480b is the master of. */
+	struct one_wire_bus_member bus_master;
+	/* Host serial port the ds2480b communicated with. */
+	struct transport *serial;
 };
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void ds2480_dev_init(struct ds2480_device *dev);
+void ds2480b_dev_init(struct ds2480b_device *);
+int  ds2480b_dev_bus_connect(struct ds2480b_device *, struct one_wire_bus *);
+int  ds2480b_dev_bus_connected(struct ds2480b_device *);
+int  ds2480b_dev_bus_rx_bit(struct ds2480b_device *);
+int  ds2480b_dev_bus_tx_bit(struct ds2480b_device *, int);
+
+void ds2480b_dev_connect_serial(struct ds2480b_device *, struct transport *);
+int  ds2480b_dev_power_on(struct ds2480b_device *dev);
 
 #ifdef __cplusplus
 };
