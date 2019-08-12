@@ -171,7 +171,7 @@ void ds1963s_dev_init(struct ds1963s_device *ds1963s)
 	memset(ds1963s->secret_memory, 0xaa, sizeof ds1963s->secret_memory);
 	memset(ds1963s->scratchpad,    0xff, sizeof ds1963s->scratchpad);
 
-	strcpy(ds1963s->data_memory, "Hello!");
+	strcpy(ds1963s->data_memory, "Hello world!");
 
 	one_wire_bus_member_init(&ds1963s->bus_slave);
         ds1963s->bus_slave.device = (void *)ds1963s;
@@ -435,6 +435,37 @@ ds1963s_dev_rom_function(struct ds1963s_device *dev)
 	return 0;
 }
 
+
+int
+ds1963s_dev_memory_command_erase_scratchpad(struct ds1963s_device *dev)
+{
+	uint8_t  TA1, TA2;
+
+	dev->CHLG = 0;
+	dev->AUTH = 0;
+
+	/* XXX: Unclear if these update the device TA registers. */
+	TA1  = DS1963S_RX_BYTE(dev);
+	TA2  = DS1963S_RX_BYTE(dev);
+
+	memset(dev->scratchpad, 0, sizeof dev->scratchpad);
+	/* Simulate TX 1s until the command is finished.
+	 *
+	 * XXX: specs say this happens for 32us.  Investigate how many 1s
+	 * to send later.
+	 */
+	for (int i = 0; i < 10; i++)
+		DS1963S_TX_BIT(dev, 1);
+
+	dev->HIDE = 0;
+
+	/* Send 010101.. pattern until we get a reset. */
+	while (1) {
+		DS1963S_TX_BIT(dev, 0);
+		DS1963S_TX_BIT(dev, 1);
+	}
+}
+
 int
 ds1963s_dev_memory_command_read_memory(struct ds1963s_device *dev)
 {
@@ -476,6 +507,10 @@ ds1963s_dev_memory_function(struct ds1963s_device *dev)
 	byte = DS1963S_RX_BYTE(dev);
 
 	switch (byte) {
+	case 0xC3:
+		DEBUG_LOG("[ds1963s|MEMORY] Erase Scratchpad\n");
+		ds1963s_dev_memory_command_erase_scratchpad(dev);
+		break;
 	case 0xF0:
 		DEBUG_LOG("[ds1963s|MEMORY] Read Memory\n");
 		ds1963s_dev_memory_command_read_memory(dev);
