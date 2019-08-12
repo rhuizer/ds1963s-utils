@@ -28,6 +28,37 @@
 #include "getput.h"
 #include "sha1.h"
 
+#define DS1963S_TX_BIT(dev, bit)					\
+	({								\
+		int v;							\
+									\
+		v = one_wire_bus_member_tx_bit(&dev->bus_slave, bit);	\
+		if (v == ONE_WIRE_BUS_SIGNAL_RESET) {			\
+			DEBUG_LOG("[ds1963s] got reset pulse\n");	\
+			dev->state = DS1963S_STATE_RESET;		\
+			return ONE_WIRE_BUS_SIGNAL_RESET;		\
+		}							\
+									\
+		v;							\
+	})
+
+#define DS1963S_TX_BYTE(dev, byte)					\
+	({								\
+		int v;							\
+									\
+		v = one_wire_bus_member_tx_byte(&dev->bus_slave, byte);	\
+		if (v == ONE_WIRE_BUS_SIGNAL_RESET) {			\
+			DEBUG_LOG("[ds1963s] got reset pulse\n");	\
+			dev->state = DS1963S_STATE_RESET;		\
+			return ONE_WIRE_BUS_SIGNAL_RESET;		\
+		}							\
+									\
+		v;							\
+	})
+
+#define DS1963S_RX_BIT(dev)	DS1963S_TX_BIT(dev, 1)
+#define DS1963S_RX_BYTE(dev)	DS1963S_TX_BYTE(dev, 0xFF)
+
 /* Calculate the value for MPX, as used in __sha1_get_input_1. */
 static uint8_t __mpx_get(int M, int X, uint8_t *SP)
 {
@@ -140,6 +171,8 @@ void ds1963s_dev_init(struct ds1963s_device *ds1963s)
 	memset(ds1963s->secret_memory, 0xaa, sizeof ds1963s->secret_memory);
 	memset(ds1963s->scratchpad,    0xff, sizeof ds1963s->scratchpad);
 
+	strcpy(ds1963s->data_memory, "Hello!");
+
 	one_wire_bus_member_init(&ds1963s->bus_slave);
         ds1963s->bus_slave.device = (void *)ds1963s;
         ds1963s->bus_slave.driver = (void(*)(void *))ds1963s_dev_power_on;
@@ -155,6 +188,12 @@ void ds1963s_dev_destroy(struct ds1963s_device *ds1963s)
 
 	list_del(&ds1963s->bus_slave.list_entry);
 	memset(ds1963s, 0, sizeof *ds1963s);
+}
+
+uint16_t
+ds1963s_dev_ta_to_address(struct ds1963s_device *ds1963s)
+{
+	return ds1963s_ta_to_address(ds1963s->TA1, ds1963s->TA2);
 }
 
 void
@@ -338,45 +377,6 @@ void ds1963s_dev_sign_data_page(struct ds1963s_device *ds1963s)
 	);
 }
 
-static inline int
-ds1963s_dev_rx_bit(struct ds1963s_device *dev)
-{
-	int bit;
-
-	bit = one_wire_bus_member_rx_bit(&dev->bus_slave);
-
-	if (bit == -1)
-		dev->state = DS1963S_STATE_RESET;
-
-	return bit;
-}
-
-static inline int
-ds1963s_dev_rx_byte(struct ds1963s_device *dev)
-{
-	int byte;
-
-	byte = one_wire_bus_member_rx_byte(&dev->bus_slave);
-
-	if (byte == -1)
-		dev->state = DS1963S_STATE_RESET;
-
-	return byte;
-}
-
-static inline void
-ds1963s_dev_tx_bit(struct ds1963s_device *dev, int bit)
-{
-	one_wire_bus_member_tx_bit(&dev->bus_slave, bit);
-}
-
-static inline void
-ds1963s_dev_tx_byte(struct ds1963s_device *dev, int byte)
-{
-	for (int i = 0; i < 8; i++)
-		ds1963s_dev_tx_bit(dev, (byte >> i) & 1);
-}
-
 int ds1963s_dev_rom_command_search_rom(struct ds1963s_device *dev)
 {
 	uint8_t rom_code[8];
@@ -389,15 +389,10 @@ int ds1963s_dev_rom_command_search_rom(struct ds1963s_device *dev)
 			int b1 = (rom_code[i] >> j) & 1;
 			int b2 = !b1;
 
-			ds1963s_dev_tx_bit(dev, b1);
-			ds1963s_dev_tx_bit(dev, b2);
-			mb = ds1963s_dev_rx_bit(dev);
+			DS1963S_TX_BIT(dev, b1);
+			DS1963S_TX_BIT(dev, b2);
+			mb = DS1963S_RX_BIT(dev);
 			DEBUG_LOG("search rom bit #%d: %d\n", i * 8 + j, mb);
-
-			if (mb == ONE_WIRE_BUS_SIGNAL_RESET) {
-				dev->state = DS1963S_STATE_RESET;
-				return -1;
-			}
 
 			/* Special case.  On mismatch we wait for reset. */
 			if (mb != b1) {
@@ -413,19 +408,20 @@ int ds1963s_dev_rom_command_search_rom(struct ds1963s_device *dev)
 	return 0;
 }
 
-void
+int
 ds1963s_dev_rom_function(struct ds1963s_device *dev)
 {
 	int byte;
 
-	byte = ds1963s_dev_rx_byte(dev);
+	byte = DS1963S_RX_BYTE(dev);
 
 	switch (byte) {
-	case ONE_WIRE_BUS_SIGNAL_RESET:
-		DEBUG_LOG("[ds1963s|ROM] Received reset pulse\n");
+	case 0x3C:
+		DEBUG_LOG("[ds1963s|ROM] Overdrive skip ROM\n");
+		dev->OD = 1;
 		break;
 	case 0xF0:
-		DEBUG_LOG("[ds1963s|ROM] Search ROM Command\n");
+		DEBUG_LOG("[ds1963s|ROM] Search ROM\n");
 		if (ds1963s_dev_rom_command_search_rom(dev) != 0)
 			break;
 
@@ -435,25 +431,61 @@ ds1963s_dev_rom_function(struct ds1963s_device *dev)
 		DEBUG_LOG("[ds1963s|ROM] Unknown command %.2x\n", byte);
 		break;
 	}
+
+	return 0;
 }
 
-void ds1963s_dev_memory_function(struct ds1963s_device *dev)
+int
+ds1963s_dev_memory_command_read_memory(struct ds1963s_device *dev)
+{
+	uint8_t  TA1, TA2;
+	uint16_t addr;
+	int page;
+
+	dev->CHLG = 0;
+	dev->AUTH = 0;
+
+	TA1  = DS1963S_RX_BYTE(dev);
+	TA2  = DS1963S_RX_BYTE(dev);
+	addr = ds1963s_ta_to_address(TA1, TA2);
+
+	while (addr < 0x2B0) {
+		ds1963s_address_to_ta(addr, &dev->TA1, &dev->TA2);
+
+		page = ds1963s_address_to_page(addr);
+		if (page == 16 || page == 17) {
+			DS1963S_TX_BYTE(dev, 0xFF);
+		} else {
+			DS1963S_TX_BYTE(dev, dev->memory[addr]);
+		}
+
+		/* DS1963S does not increment addr past 0x2AF. */
+		if (addr == 0x2AF) break;
+		addr += 1;
+	}
+
+	while (1)
+		DS1963S_TX_BIT(dev, 1);
+}
+
+int
+ds1963s_dev_memory_function(struct ds1963s_device *dev)
 {
 	int byte;
 
-	byte = ds1963s_dev_rx_byte(dev);
+	byte = DS1963S_RX_BYTE(dev);
 
 	switch (byte) {
-	case ONE_WIRE_BUS_SIGNAL_RESET:
-		DEBUG_LOG("[ds1963s|MEMORY] Received reset pulse\n");
-		break;
 	case 0xF0:
 		DEBUG_LOG("[ds1963s|MEMORY] Read Memory\n");
+		ds1963s_dev_memory_command_read_memory(dev);
 		break;
 	default:
 		DEBUG_LOG("[ds1963s|MEMORY] Unknown command %.2x\n", byte);
 		break;
 	}
+
+	return 0;
 }
 
 int ds1963s_dev_power_on(struct ds1963s_device *dev)

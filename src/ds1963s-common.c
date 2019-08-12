@@ -75,3 +75,25 @@ uint16_t ds1963s_crc16(const uint8_t *buf, size_t count)
 
 	return crc;
 }
+
+uint16_t
+ds1963s_ta_to_address(uint8_t TA1, uint8_t TA2)
+{
+        return (TA2 << 8) | TA1;
+}
+
+void
+ds1963s_address_to_ta(uint16_t address, uint8_t *TA1, uint8_t *TA2)
+{
+	*TA1 = address & 0xFF;
+	*TA2 = address >> 8;
+}
+
+int
+ds1963s_address_to_page(int address)
+{
+        if (address < 0 || address > 0x2c0)
+                return -1;
+
+        return address / 32;
+}

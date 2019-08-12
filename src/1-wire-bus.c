@@ -62,7 +62,7 @@ __one_wire_bus_cycle(struct one_wire_bus *bus)
 		tmp = (int)(intptr_t)coroutine_await(&bus->coro, &m->coro);
 		if (tmp == -1)
 			signal = -1;
-		else
+		else if (signal != -1)
 			signal &= tmp;
 
 		DEBUG_LOG("[1-wire-bus] %s signal %d\n", m->name, signal);
@@ -197,6 +197,10 @@ one_wire_bus_member_tx_byte(struct one_wire_bus_member *member, int byte)
 
 	for (int i = 0; i < 8; i++) {
 		bit = one_wire_bus_member_tx_bit(member, (byte >> i) & 1);
+
+		if (bit == ONE_WIRE_BUS_SIGNAL_RESET)
+			return ONE_WIRE_BUS_SIGNAL_RESET;
+
 		result |= bit << i;
 	}
 
