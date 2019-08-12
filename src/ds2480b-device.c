@@ -149,12 +149,12 @@ void ds2480b_dev_init(struct ds2480b_device *dev)
 }
 
 int
-ds2480b_dev_bus_connect(struct ds2480b_device *dev, struct one_wire_bus *b)
+ds2480b_dev_bus_connect(struct ds2480b_device *dev, struct one_wire_bus *bus)
 {
 	if (ds2480b_dev_bus_connected(dev) != 0)
 		return -1;
 
-	return one_wire_bus_member_add(b, &dev->bus_master);
+	return one_wire_bus_member_add(&dev->bus_master, bus);
 }
 
 int
@@ -537,12 +537,9 @@ int ds2480b_dev_power_on(struct ds2480b_device *dev)
 	int response;
 
 	assert(dev != NULL);
+	assert(dev->mode == DS2480_MODE_INACTIVE);
 
 	DEBUG_LOG("[ds2480b] power on\n");
-
-	/* Device is already powered-on.  Error. */
-	if (dev->mode != DS2480_MODE_INACTIVE)
-		return -1;
 
 #if 0
 	/* Handle the calibration byte. */

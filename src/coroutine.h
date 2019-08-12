@@ -31,8 +31,14 @@
 #include "debug.h"
 #include "list.h"
 
+struct coroutine;
+
+typedef void (*coroutine_handler_t)(struct coroutine *);
+typedef void (*coroutine_destructor_t)(struct coroutine *);
+
 struct coroutine
 {
+	coroutine_destructor_t	destructor;
 	void			*cookie;
 	void			*data;
 	struct list_head	entry;
@@ -43,13 +49,12 @@ struct coroutine
 #endif
 };
 
-typedef void (*coroutine_handler_t)(struct coroutine *);
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 int   coroutine_init(struct coroutine *, coroutine_handler_t, void *);
+void  coroutine_destructor_set(struct coroutine *, coroutine_destructor_t);
 void *coroutine_await(struct coroutine *, struct coroutine *);
 int   coroutine_return(struct coroutine *, void *);
 int   coroutine_returnto(struct coroutine *, struct coroutine *, void *);

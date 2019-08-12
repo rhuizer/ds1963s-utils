@@ -51,6 +51,7 @@ int coroutine_init(struct coroutine *coro, coroutine_handler_t f, void *cookie)
 	if ( (stack = malloc(stack_size)) == NULL)
 		return -1;
 
+	coro->destructor                = NULL;
 	coro->cookie                    = cookie;
 	coro->data			= NULL;
 	coro->context.uc_link           = &cleanup_context;
@@ -67,6 +68,12 @@ int coroutine_init(struct coroutine *coro, coroutine_handler_t f, void *cookie)
 	makecontext(&coro->context, (void (*)())f, 1, coro);
 
 	return 0;
+}
+
+void
+coroutine_destructor_set(struct coroutine *coro, coroutine_destructor_t d)
+{
+	coro->destructor = d;
 }
 
 void coroutine_reschedule(struct coroutine *coro)
@@ -168,6 +175,9 @@ void coroutine_destroy(struct coroutine *coro)
 
 void coroutine_end(void)
 {
+	if (coro_current->destructor != NULL)
+		coro_current->destructor(coro_current);
+
 	coroutine_destroy(coro_current);
 }
 

@@ -75,7 +75,7 @@ int ds1963s_tool_secret_hmac_target_get(
 {
 	struct ds1963s_brute *brute = &tool->brute;
 	struct ds1963s_read_auth_page_reply reply;
-	int addr;
+	int addr, ret;
 
 	assert(brute != NULL);
 	assert(secret >= 0 && secret <= 8);
@@ -85,12 +85,15 @@ int ds1963s_tool_secret_hmac_target_get(
 	 * overwrite to make things work.
 	 */
 	if (link != 0) {
-		ds1963s_client_secret_write(
+		ret = ds1963s_client_secret_write(
 			&tool->client,		/* DS1963S context         */
 			secret,			/* Secret number           */
 			"\0\0\0\0\0\0\0\0",	/* Partial secret to write */
 			link * 2		/* Length of the secret    */
 		);
+
+		if (ret == -1)
+			return -1;
 	}
 
 	/* Calculate the address of this secret. */

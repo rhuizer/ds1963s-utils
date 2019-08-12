@@ -27,7 +27,7 @@
 static inline int
 __one_wire_bus_cycle(struct one_wire_bus *bus)
 {
-	struct list_head *lh;
+	struct list_head *lh, *lh2;
 	int signal;
 
 	assert(bus != NULL);
@@ -48,7 +48,7 @@ __one_wire_bus_cycle(struct one_wire_bus *bus)
 	 * is necessary to wait until every member is accessing the bus for
 	 * either read or write operations.
 	 */
-	list_for_each (lh, &bus->members) {
+	list_for_each_safe (lh, lh2, &bus->members) {
 		int tmp;
 		struct one_wire_bus_member *m =
 			list_entry(lh, struct one_wire_bus_member, list_entry);
@@ -90,7 +90,8 @@ __one_wire_bus_coroutine(struct coroutine *coro)
 	while (__one_wire_bus_cycle(bus) == 0);
 }
 
-static void __one_wire_bus_member_coroutine(struct coroutine *coro)
+static void
+__one_wire_bus_member_coroutine(struct coroutine *coro)
 {
 	struct one_wire_bus_member *member;
 
@@ -99,6 +100,18 @@ static void __one_wire_bus_member_coroutine(struct coroutine *coro)
 
 	member = (struct one_wire_bus_member *)coro->cookie;
 	member->driver(member->device);
+}
+
+static void
+__one_wire_bus_member_destructor(struct coroutine *coro)
+{
+	struct one_wire_bus_member *member;
+
+	assert(coro != NULL);
+	assert(coro->cookie != NULL);
+	member = (struct one_wire_bus_member *)coro->cookie;
+
+	one_wire_bus_member_remove(member);
 }
 
 void one_wire_bus_init(struct one_wire_bus *bus)
@@ -120,7 +133,9 @@ void one_wire_bus_member_init(struct one_wire_bus_member *member)
 	list_init(&member->list_entry);
 }
 
-int one_wire_bus_member_add(struct one_wire_bus *bus, struct one_wire_bus_member *member)
+int
+one_wire_bus_member_add(struct one_wire_bus_member *member,
+                        struct one_wire_bus *bus)
 {
 	assert(bus != NULL);
 	assert(member != NULL);
@@ -132,8 +147,20 @@ int one_wire_bus_member_add(struct one_wire_bus *bus, struct one_wire_bus_member
 	member->bus = bus;
 	list_add(&member->list_entry, &bus->members);
 	coroutine_init(&member->coro, __one_wire_bus_member_coroutine, member);
+	coroutine_destructor_set(&member->coro, __one_wire_bus_member_destructor);
 
 	return 0;
+}
+
+void
+one_wire_bus_member_remove(struct one_wire_bus_member *member)
+{
+	assert(member != NULL);
+	assert(member->bus != NULL);
+	assert(!list_empty(&member->list_entry));
+
+	member->bus = NULL;
+	list_del(&member->list_entry);
 }
 
 int

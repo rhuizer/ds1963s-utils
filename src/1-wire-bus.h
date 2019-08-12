@@ -71,7 +71,8 @@ void one_wire_bus_init(struct one_wire_bus *bus);
 int  one_wire_bus_run(struct one_wire_bus *bus);
 
 void one_wire_bus_member_init(struct one_wire_bus_member *member);
-int  one_wire_bus_member_add(struct one_wire_bus *, struct one_wire_bus_member *);
+int  one_wire_bus_member_add(struct one_wire_bus_member *, struct one_wire_bus *);
+void one_wire_bus_member_remove(struct one_wire_bus_member *);
 
 void one_wire_bus_member_reset_pulse(struct one_wire_bus_member *);
 int  one_wire_bus_member_tx_bit(struct one_wire_bus_member *, int);

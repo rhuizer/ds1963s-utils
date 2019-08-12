@@ -67,8 +67,7 @@
 		DS1963S_TX_BIT(dev, 1);					\
 	} while (1)
 
-#define DS1963S_TX_END(dev) DS1963S_TX_FAIL(dev)
-
+#define DS1963S_TX_END(dev)	DS1963S_TX_FAIL(dev)
 #define DS1963S_RX_BIT(dev)	DS1963S_TX_BIT(dev, 1)
 #define DS1963S_RX_BYTE(dev)	DS1963S_TX_BYTE(dev, 0xFF)
 
@@ -241,7 +240,7 @@ void ds1963s_dev_connect_bus(struct ds1963s_device *ds1963s, struct one_wire_bus
 {
 	assert(ds1963s != NULL);
 
-	one_wire_bus_member_add(bus, &ds1963s->bus_slave);
+	one_wire_bus_member_add(&ds1963s->bus_slave, bus);
 }
 
 void ds1963s_dev_erase_scratchpad(struct ds1963s_device *ds1963s, int address)
@@ -329,36 +328,6 @@ ds1963s_dev_read_auth_page(struct ds1963s_device *ds1963s, int page)
 		ctx.state[3] - 0x10325476,
 		ctx.state[4] - 0xC3D2E1F0
 	);
-}
-
-int ds1963s_dev_compute_sha(struct ds1963s_device *ds1963s, int control)
-{
-	assert(ds1963s != NULL);
-
-	switch (control) {
-	case 0x0F:
-		/* compute first secret */
-		break;
-	case 0xF0:
-		/* compute next secret */
-		break;
-	case 0x3C:
-		/* validate data page */
-		break;
-	case 0xC3:
-		ds1963s_dev_sign_data_page(ds1963s);
-		break;
-	case 0xCC:
-		/* compute challenge */
-		break;
-	case 0xAA:
-		/* authenticate host */
-		break;
-	default:
-		return -1;
-	}
-
-	return 0;
 }
 
 /* There is no page argument as this function only works on page 0 and 8.
@@ -866,7 +835,9 @@ int ds1963s_dev_power_on(struct ds1963s_device *dev)
 			break;
 		case DS1963S_STATE_RESET:
 
-#if 0			/* XXX: hack */
+#if 0			/* XXX: hack, we don't hot-add to the topology anyway,
+			 * so for now we don't need this.
+			 */
 			ds1963s_dev_rx_bit(dev);
 			DEBUG_LOG("[ds1963s|RESET] Sending presence pulse\n");
 			ds1963s_dev_tx_bit(dev, 1);
