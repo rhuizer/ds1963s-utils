@@ -517,11 +517,9 @@ ds1963s_dev_memory_command_write_scratchpad(struct ds1963s_device *dev)
 			return ONE_WIRE_BUS_SIGNAL_RESET;
 		}
 
-		if (dev->HIDE == 0) {
-			DEBUG_LOG("SP[%d] = %.2x\n", offset, byte);
+		if (dev->HIDE == 0)
 			dev->scratchpad[offset] = byte;
-		}
-
+		dev->ES = offset;
 		data[i] = byte;
 	}
 
