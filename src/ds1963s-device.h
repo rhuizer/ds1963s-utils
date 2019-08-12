@@ -52,6 +52,7 @@ struct ds1963s_device
 
 	uint8_t		TA1;
 	uint8_t		TA2;
+	uint8_t		ES;
 
 	uint8_t		M:1;
 	uint8_t		X:1;
@@ -62,8 +63,7 @@ struct ds1963s_device
 	uint8_t		OD:1;
 	uint8_t		PF:1;
 	uint8_t		RC:1;
-
-	uint8_t		ES;
+	uint8_t		AA:1;
 
 	int		state;
 

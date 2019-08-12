@@ -538,6 +538,49 @@ done:
 }
 
 int
+ds1963s_dev_memory_command_copy_scratchpad(struct ds1963s_device *dev)
+{
+	uint8_t  TA1, TA2, ES;
+	uint16_t addr;
+
+	dev->CHLG = 0;
+	dev->AUTH = 0;
+
+	TA1  = DS1963S_RX_BYTE(dev);
+	TA2  = DS1963S_RX_BYTE(dev);
+	ES   = DS1963S_RX_BYTE(dev);
+	addr = ds1963s_ta_to_address(TA1, TA2);
+
+	if (dev->HIDE == 0 && addr >= 0x200)
+		goto error;
+
+	if (dev->HIDE == 1 && !ds1963s_address_secret(addr))
+		goto error;
+
+	if (TA1 != dev->TA1 || TA2 != dev->TA2 || ES != dev->ES)
+		goto error;
+
+	dev->AA = 1;
+	memcpy(&dev->memory[addr], &dev->scratchpad, (ES & 0x1F) + 1);
+
+	/* XXX: specs say this happens for 32us.  Investigate how many 1s
+	 * to send later.
+	 */
+	for (int i = 0; i < 10; i++)
+		DS1963S_TX_BIT(dev, 1);
+
+	/* Send 010101.. pattern until we get a reset. */
+	while (1) {
+		DS1963S_TX_BIT(dev, 0);
+		DS1963S_TX_BIT(dev, 1);
+	}
+
+error:
+	while (1)
+		DS1963S_TX_BIT(dev, 1);
+}
+
+int
 ds1963s_dev_memory_command_read_scratchpad(struct ds1963s_device *dev)
 {
 	unsigned char data[36];
@@ -640,6 +683,10 @@ ds1963s_dev_memory_function(struct ds1963s_device *dev)
 	case 0x0F:
 		DEBUG_LOG("[ds1963s|MEMORY] Write Scratchpad\n");
 		ds1963s_dev_memory_command_write_scratchpad(dev);
+		break;
+	case 0x55:
+		DEBUG_LOG("[ds1963s|MEMORY] Copy Scratchpad\n");
+		ds1963s_dev_memory_command_copy_scratchpad(dev);
 		break;
 	case 0xAA:
 		DEBUG_LOG("[ds1963s|MEMORY] Read Scratchpad\n");
