@@ -376,7 +376,8 @@ ds1963s_dev_rom_command_resume(struct ds1963s_device *dev)
 		dev->state = DS1963S_STATE_RESET_WAIT;
 }
 
-int ds1963s_dev_rom_command_search_rom(struct ds1963s_device *dev)
+int
+ds1963s_dev_rom_command_search_rom(struct ds1963s_device *dev)
 {
 	uint8_t rom_code[8];
 
@@ -428,8 +429,8 @@ ds1963s_dev_rom_function(struct ds1963s_device *dev)
 		break;
 	case 0xF0:
 		DEBUG_LOG("[ds1963s|ROM] Search ROM\n");
-		if (ds1963s_dev_rom_command_search_rom(dev) != 0)
-			break;
+		if (ds1963s_dev_rom_command_search_rom(dev) == -1)
+			return -1;
 
 		dev->state = DS1963S_STATE_MEMORY_FUNCTION;
 		break;
@@ -834,6 +835,7 @@ int ds1963s_dev_power_on(struct ds1963s_device *dev)
 			dev->state = DS1963S_STATE_RESET;
 			break;
 		case DS1963S_STATE_RESET:
+			DEBUG_LOG("[ds1963s|RESET] Waiting for ROM function...\n");
 
 #if 0			/* XXX: hack, we don't hot-add to the topology anyway,
 			 * so for now we don't need this.

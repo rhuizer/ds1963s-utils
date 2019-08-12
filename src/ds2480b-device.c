@@ -204,6 +204,14 @@ void ds2480b_dev_reset(struct ds2480b_device *dev, int speed)
 
 	dev->mode  = DS2480_MODE_COMMAND;
 	dev->speed = speed;
+
+	dev->config.slew             = DS2480_PARAM_SLEW_VALUE_15Vus;
+	dev->config.pulse12v         = DS2480_PARAM_PULSE12V_VALUE_512us;
+	dev->config.pulse5v          = DS2480_PARAM_PULSE5V_VALUE_524ms;
+	dev->config.write1low        = DS2480_PARAM_WRITE1LOW_VALUE_8us;
+	dev->config.sampleoffset     = DS2480_PARAM_SAMPLEOFFSET_VALUE_8us;
+	dev->config.activepulluptime = DS2480_PARAM_ACTIVEPULLUPTIME_VALUE_3p0us;
+	dev->config.baudrate         = DS2480_PARAM_BAUDRATE_VALUE_9600;
 }
 
 static inline int
@@ -327,9 +335,14 @@ ds2480b_dev_command_configuration(struct ds2480b_device *dev, unsigned char byte
 	 * param_code will select the parameter to write otherwise, and
 	 * param_value is the value to write.
 	 */
-	if (param_code == 0) {
-		param_value = ds2480b_dev_config_read(dev, param_value);
+	if (param_code == DS2480_PARAM_PARMREAD) {
+		param_code  = param_value;
+		param_value = ds2480b_dev_config_read(dev, param_code);
 		reply = param_value << 1;
+		DEBUG_LOG("  PARMREAD: %s (0x%.2x)\n",
+			__param_value_names[param_code][param_value],
+			param_value
+		);
 	} else {
 		ds2480b_dev_config_write(dev, param_code, param_value);
 		reply = byte & ~1;
@@ -546,7 +559,6 @@ int ds2480b_dev_power_on(struct ds2480b_device *dev)
 
 	DEBUG_LOG("[ds2480b] power on\n");
 
-#if 0
 	/* Handle the calibration byte. */
 	if (transport_read_all(dev->serial, &request, 1) == -1)
 		return -1;
@@ -557,7 +569,6 @@ int ds2480b_dev_power_on(struct ds2480b_device *dev)
 	/* XXX: this is supposed to be 9600 bps.  Add check later. */
 	if (!__is_reset(request))
 		return -1;
-#endif
 
 	dev->mode = DS2480_MODE_COMMAND;
 
@@ -565,7 +576,7 @@ int ds2480b_dev_power_on(struct ds2480b_device *dev)
 		if (transport_read_all(dev->serial, &request, 1) == -1)
 			return -1;
 
-		DEBUG_LOG("    command: %.2x\n", request);
+		DEBUG_LOG("[ds2480b] mode: %d command: %.2x\n", dev->mode, request);
 
 		switch (dev->mode) {
 		case DS2480_MODE_COMMAND:
@@ -591,7 +602,6 @@ int ds2480b_dev_power_on(struct ds2480b_device *dev)
 		if (response >= 0 && dev->mode != DS2480_MODE_INACTIVE) {
 			unsigned char res = (unsigned char)response;
 
-			DEBUG_LOG("transport: %.2x\n", res);
 			if (transport_write_all(dev->serial, &res, 1) == -1)
 				return -1;
 		}
