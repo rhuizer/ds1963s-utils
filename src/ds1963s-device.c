@@ -278,18 +278,12 @@ void ds1963s_dev_write_scratchpad(
 	}
 }
 
-void ds1963s_dev_read_auth_page(struct ds1963s_device *ds1963s, int page)
+void
+ds1963s_dev_read_auth_page(struct ds1963s_device *ds1963s, int page)
 {
 	uint8_t M[64];
 	uint8_t CC[4];
 	SHA1_CTX ctx;
-
-	/* XXX: set properly. */
-	ds1963s->M = 0;
-
-	ds1963s->X = 0;
-	ds1963s->CHLG = 0;
-	ds1963s->AUTH = 0;
 
 	PUT_32BIT_LSB(CC, ds1963s->data_wc[page]);
 
@@ -581,6 +575,79 @@ error:
 }
 
 int
+ds1963s_dev_memory_command_read_authenticated_page(struct ds1963s_device *dev)
+{
+	unsigned char data[43];
+	uint8_t  TA1, TA2;
+	uint8_t  CC[4];
+	uint16_t crc16;
+	uint16_t addr;
+	int      page;
+	int      i;
+
+	dev->CHLG = 0;
+	dev->AUTH = 0;
+
+	TA1  = DS1963S_RX_BYTE(dev);
+	TA2  = DS1963S_RX_BYTE(dev);
+	addr = ds1963s_ta_to_address(TA1, TA2);
+	page = ds1963s_address_to_page(addr);
+
+	if (addr >= 0x200)
+		goto error;
+
+	i = 0;
+	data[i++] = 0xA5;
+	data[i++] = TA1;
+	data[i++] = TA2;
+
+	do {
+		DS1963S_TX_BYTE(dev, dev->memory[addr]);
+		data[i++] = dev->memory[addr];
+	} while (++addr % 32 != 0);
+
+	/* TX the write cycle counter of the page. */
+	PUT_32BIT_LSB(CC, dev->data_wc[page]);
+	for (int j = 0; j < 4; j++) {
+		DS1963S_TX_BYTE(dev, CC[j]);
+		data[i++] = CC[j];
+	}
+
+	/* TX the write cycle counter of secret for this page. */
+	PUT_32BIT_LSB(CC, dev->secret_wc[page]);
+	for (int j = 0; j < 4; j++) {
+		DS1963S_TX_BYTE(dev, CC[j]);
+		data[i++] = CC[j];
+	}
+
+	/* TX the crc16 of everything done so far. */
+	crc16 = ~ds1963s_crc16(data, i);
+	DS1963S_TX_BYTE(dev, crc16 & 0xFF);
+	DS1963S_TX_BYTE(dev, crc16 >> 8);
+
+	dev->X = 0;
+	/* XXX: FIXME AND WORK OUT THE LOGIC FOR M. */
+	dev->M = 0;
+
+	/* Construct the SHA-1 hash on the scratchpad. */
+	ds1963s_dev_read_auth_page(dev, page);
+
+	/* XXX: Investigate how many 1s to send later. */
+	for (int i = 0; i < 10; i++)
+		DS1963S_TX_BIT(dev, 1);
+
+	/* Send 010101.. pattern until we get a reset. */
+	while (1) {
+		DS1963S_TX_BIT(dev, 0);
+		DS1963S_TX_BIT(dev, 1);
+	}
+
+error:
+	while (1)
+		DS1963S_TX_BIT(dev, 1);
+}
+
+int
 ds1963s_dev_memory_command_read_scratchpad(struct ds1963s_device *dev)
 {
 	unsigned char data[36];
@@ -687,6 +754,10 @@ ds1963s_dev_memory_function(struct ds1963s_device *dev)
 	case 0x55:
 		DEBUG_LOG("[ds1963s|MEMORY] Copy Scratchpad\n");
 		ds1963s_dev_memory_command_copy_scratchpad(dev);
+		break;
+	case 0xA5:
+		DEBUG_LOG("[ds1963s|MEMORY] Read Authenticated Page\n");
+		ds1963s_dev_memory_command_read_authenticated_page(dev);
 		break;
 	case 0xAA:
 		DEBUG_LOG("[ds1963s|MEMORY] Read Scratchpad\n");
