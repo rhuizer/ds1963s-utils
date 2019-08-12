@@ -60,6 +60,16 @@ __one_wire_bus_cycle(struct one_wire_bus *bus)
 		 * line.  If one pulls the line low, it will be low.
 		 */
 		tmp = (int)(intptr_t)coroutine_await(&bus->coro, &m->coro);
+
+		/* It's possible the bus member disappeared during our await,
+		 * so we check if it is still present.  If not we skip
+		 * updating the signal.
+		 *
+		 * XXX: maybe try to solve this in coroutine.c
+		 */
+		if (list_empty(&m->list_entry))
+			continue;
+
 		if (tmp == -1)
 			signal = -1;
 		else if (signal != -1)
@@ -141,8 +151,7 @@ one_wire_bus_member_add(struct one_wire_bus_member *member,
 	assert(member != NULL);
 	assert(list_empty(&member->list_entry));
 
-	DEBUG_LOG("Adding member `%.*s' to the 1-wire bus.\n",
-	          (int)sizeof(member->name), member->name);
+	DEBUG_LOG("[1-wire-bus] Adding member `%s'\n", member->name);
 
 	member->bus = bus;
 	list_add(&member->list_entry, &bus->members);
@@ -159,8 +168,10 @@ one_wire_bus_member_remove(struct one_wire_bus_member *member)
 	assert(member->bus != NULL);
 	assert(!list_empty(&member->list_entry));
 
+	DEBUG_LOG("[1-wire-bus] Removing member `%s'\n", member->name);
+
 	member->bus = NULL;
-	list_del(&member->list_entry);
+	list_del_init(&member->list_entry);
 }
 
 int
