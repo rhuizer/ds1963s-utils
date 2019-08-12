@@ -30,6 +30,8 @@ extern "C" {
 
 uint8_t  ds1963s_crc8(const uint8_t *buf, size_t count);
 uint16_t ds1963s_crc16(const uint8_t *buf, size_t count);
+uint16_t ds1963s_crc16_update(uint16_t crc16, const uint8_t *buf, size_t count);
+uint16_t ds1963s_crc16_update_byte(uint16_t crc16, uint8_t byte);
 
 uint16_t ds1963s_ta_to_address(uint8_t TA1, uint8_t TA2);
 void     ds1963s_address_to_ta(uint16_t address, uint8_t *TA1, uint8_t *TA2);

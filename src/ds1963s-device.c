@@ -469,10 +469,9 @@ ds1963s_dev_rom_function(struct ds1963s_device *dev)
 int
 ds1963s_dev_memory_command_write_scratchpad(struct ds1963s_device *dev)
 {
-	unsigned char data[35];
 	uint8_t  offset;
+	uint16_t crc16;
 	uint16_t addr;
-	int      i;
 
 	dev->CHLG = 0;
 	dev->AUTH = 0;
@@ -481,12 +480,10 @@ ds1963s_dev_memory_command_write_scratchpad(struct ds1963s_device *dev)
 	addr      = ds1963s_ta_to_address(dev->TA1, dev->TA2);
 	offset    = dev->TA1 & 0x1F;
 
-	/* Keep track for crc16 calculation
-	 * XXX: later switch to stream based crc16
-	 */
-	data[0] = 0x0F;
-	data[1] = dev->TA1;
-	data[2] = dev->TA2;
+	crc16 = 0;
+	crc16 = ds1963s_crc16_update_byte(crc16, 0x0F);
+	crc16 = ds1963s_crc16_update_byte(crc16, dev->TA1);
+	crc16 = ds1963s_crc16_update_byte(crc16, dev->TA2);
 
 	if (dev->HIDE == 0) {
 		if (addr >= 0x200) goto done;
@@ -500,7 +497,7 @@ ds1963s_dev_memory_command_write_scratchpad(struct ds1963s_device *dev)
 		dev->ES  |= 0x07;		/* E2:E0 := 1,1,1     */
 	}
 
-	for (i = 3; offset < 32; i++, offset++) {
+	for (int i = 3; offset < 32; i++, offset++) {
 		int byte;
 
 		/* XXX: does not properly handle 8-bit boundaries. */
@@ -513,15 +510,14 @@ ds1963s_dev_memory_command_write_scratchpad(struct ds1963s_device *dev)
 
 		if (dev->HIDE == 0)
 			dev->scratchpad[offset] = byte;
+
 		dev->ES = offset;
-		data[i] = byte;
+		crc16 = ds1963s_crc16_update_byte(crc16, byte);
 	}
 
 	/* If the full scratchpad was written we send the crc16. */
 	if (offset == 32) {
-		uint16_t crc16;
-
-		crc16 = ~ds1963s_crc16(data, i);
+		crc16 = ~crc16;
 		DS1963S_TX_BYTE(dev, crc16 & 0xFF);
 		DS1963S_TX_BYTE(dev, crc16 >> 8);
 	}
@@ -529,6 +525,18 @@ ds1963s_dev_memory_command_write_scratchpad(struct ds1963s_device *dev)
 done:
 	while (1)
 		DS1963S_TX_BIT(dev, 1);
+}
+
+int
+ds1963s_dev_memory_command_compute_sha(struct ds1963s_device *dev)
+{
+	uint8_t  TA1, TA2, ctrl;
+	uint16_t addr;
+
+	TA1  = DS1963S_RX_BYTE(dev);
+	TA2  = DS1963S_RX_BYTE(dev);
+	ctrl = DS1963S_RX_BYTE(dev);
+	addr = ds1963s_ta_to_address(TA1, TA2);
 }
 
 int
@@ -577,13 +585,11 @@ error:
 int
 ds1963s_dev_memory_command_read_authenticated_page(struct ds1963s_device *dev)
 {
-	unsigned char data[43];
 	uint8_t  TA1, TA2;
 	uint8_t  CC[4];
 	uint16_t crc16;
 	uint16_t addr;
 	int      page;
-	int      i;
 
 	dev->CHLG = 0;
 	dev->AUTH = 0;
@@ -596,32 +602,32 @@ ds1963s_dev_memory_command_read_authenticated_page(struct ds1963s_device *dev)
 	if (addr >= 0x200)
 		goto error;
 
-	i = 0;
-	data[i++] = 0xA5;
-	data[i++] = TA1;
-	data[i++] = TA2;
+	crc16 = 0;
+	crc16 = ds1963s_crc16_update_byte(crc16, 0xA5);
+	crc16 = ds1963s_crc16_update_byte(crc16, TA1);
+	crc16 = ds1963s_crc16_update_byte(crc16, TA2);
 
 	do {
 		DS1963S_TX_BYTE(dev, dev->memory[addr]);
-		data[i++] = dev->memory[addr];
+		crc16 = ds1963s_crc16_update_byte(crc16, dev->memory[addr]);
 	} while (++addr % 32 != 0);
 
 	/* TX the write cycle counter of the page. */
 	PUT_32BIT_LSB(CC, dev->data_wc[page]);
 	for (int j = 0; j < 4; j++) {
 		DS1963S_TX_BYTE(dev, CC[j]);
-		data[i++] = CC[j];
+		crc16 = ds1963s_crc16_update_byte(crc16, CC[j]);
 	}
 
 	/* TX the write cycle counter of secret for this page. */
 	PUT_32BIT_LSB(CC, dev->secret_wc[page]);
 	for (int j = 0; j < 4; j++) {
 		DS1963S_TX_BYTE(dev, CC[j]);
-		data[i++] = CC[j];
+		crc16 = ds1963s_crc16_update_byte(crc16, CC[j]);
 	}
 
 	/* TX the crc16 of everything done so far. */
-	crc16 = ~ds1963s_crc16(data, i);
+	crc16 = ~crc16;
 	DS1963S_TX_BYTE(dev, crc16 & 0xFF);
 	DS1963S_TX_BYTE(dev, crc16 >> 8);
 
@@ -650,7 +656,6 @@ error:
 int
 ds1963s_dev_memory_command_read_scratchpad(struct ds1963s_device *dev)
 {
-	unsigned char data[36];
 	uint8_t  offset;
 	uint16_t crc16;
 	int      i;
@@ -661,18 +666,19 @@ ds1963s_dev_memory_command_read_scratchpad(struct ds1963s_device *dev)
 
 	offset = dev->TA1 & 0x1F;
 
-	data[0] = 0xAA;
-	data[1] = dev->TA1;
-	data[2] = dev->TA2;
-	data[3] = dev->ES;
+	crc16 = 0;
+	crc16 = ds1963s_crc16_update_byte(crc16, 0xAA);
+	crc16 = ds1963s_crc16_update_byte(crc16, dev->TA1);
+	crc16 = ds1963s_crc16_update_byte(crc16, dev->TA2);
+	crc16 = ds1963s_crc16_update_byte(crc16, dev->ES);
 
 	for (i = 4; offset < 32; i++, offset++) {
 		int byte = dev->HIDE ? 0xFF : dev->scratchpad[offset];
 		DS1963S_TX_BYTE(dev, byte);
-		data[i] = byte;
+		crc16 = ds1963s_crc16_update_byte(crc16, byte);
 	}
 
-	crc16 = ~ds1963s_crc16(data, i);
+	crc16 = ~crc16;
 	DS1963S_TX_BYTE(dev, crc16 & 0xFF);
 	DS1963S_TX_BYTE(dev, crc16 >> 8);
 
@@ -750,6 +756,10 @@ ds1963s_dev_memory_function(struct ds1963s_device *dev)
 	case 0x0F:
 		DEBUG_LOG("[ds1963s|MEMORY] Write Scratchpad\n");
 		ds1963s_dev_memory_command_write_scratchpad(dev);
+		break;
+	case 0x33:
+		DEBUG_LOG("[ds1963s|MEMORY] Compute SHA\n");
+		ds1963s_dev_memory_command_compute_sha(dev);
 		break;
 	case 0x55:
 		DEBUG_LOG("[ds1963s|MEMORY] Copy Scratchpad\n");

@@ -54,9 +54,10 @@ uint8_t ds1963s_crc8(const uint8_t *buf, size_t count)
 
 static uint8_t oddparity[16] = { 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0 };
 
-uint16_t ds1963s_crc16(const uint8_t *buf, size_t count)
+uint16_t
+ds1963s_crc16_update(uint16_t crc16, const uint8_t *buf, size_t count)
 {
-	uint16_t crc = 0;
+	uint16_t crc = crc16;
 	uint16_t word;
 	size_t i;
 
@@ -74,6 +75,18 @@ uint16_t ds1963s_crc16(const uint8_t *buf, size_t count)
 	}
 
 	return crc;
+}
+
+uint16_t
+ds1963s_crc16_update_byte(uint16_t crc16, uint8_t byte)
+{
+	return ds1963s_crc16_update(crc16, &byte, 1);
+}
+
+uint16_t
+ds1963s_crc16(const uint8_t *buf, size_t count)
+{
+	return ds1963s_crc16_update(0, buf, count);
 }
 
 uint16_t
