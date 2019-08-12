@@ -279,6 +279,7 @@ void ds1963s_tool_info_full(struct ds1963s_tool *tool)
 			&buf[32 * i],
 			32
 		);
+
 		if (r == -1) {
 			ds1963s_client_perror(&tool->client,
 				"ds1963s_client_memory_read()");
@@ -295,33 +296,31 @@ void ds1963s_tool_info_full(struct ds1963s_tool *tool)
 		tool->brute.dev.secret_wc[i] = counters[i + 8];
 	}
 
-	printf("01. Calculating HMAC links.\n");
-
 	for (secret = 0; secret < 8; secret++) {
 		for (link = 0; link < 4; link++) {
-			printf("\r    Secret #%d [%d/4]", secret, link);
-			fflush(stdout);
+//			printf("\r    Secret #%d [%d/4]", secret, link);
+//			fflush(stdout);
 			ds1963s_tool_secret_hmac_target_get(tool, secret, link);
 		}
-		printf("\r    Secret #%d [4/4]\n", secret);
+//		printf("\r    Secret #%d [4/4]\n", secret);
 	}
 
-	printf("02. Calculating secrets from HMAC links.\n");
-
+	printf("\nSecrets dump\n");
+	printf("------------\n");
 	for (secret = 0; secret < 8; secret++) {
 		for (link = 3; link >= 0; link--)
 			ds1963s_tool_brute_link(tool, secret, link);
 
-		printf("    Secret #%d: ", secret);
+		printf("Secret %d: ", secret);
 		for (i = 0; i < 8; i++)
 			printf("%.2x", tool->brute.secrets[secret].secret[i]);
 		printf("\n");
 	}
 
-	printf("03. Restoring recovered keys.\n");
+//	printf("03. Restoring recovered keys.\n");
 
 	for (secret = 0; secret < 8; secret++) {
-		printf("    Secret #%d\n", secret);
+//		printf("    Secret #%d\n", secret);
         	ds1963s_client_secret_write(
 			&tool->client,
 			secret,
@@ -449,7 +448,8 @@ ds1963s_tool_sign(struct ds1963s_tool *tool, int page, size_t size)
 	ds1963s_client_hash_print(hash);
 }
 
-inline int __dehex_char(char c)
+static inline int
+__dehex_char(char c)
 {
 	if (c >= '0' && c <= '9')
 		return c - '0';
@@ -470,7 +470,7 @@ int __dehex(uint8_t *dst, const char *src, size_t n)
 	if (src_len == 0 || src_len % 2 != 0)
 		return -1;
 
-	for (i = 0; i < src_len; src_len++)
+	for (i = 0; i < src_len; i++)
 		if (!isalnum(src[i]))
 			return -1;
 

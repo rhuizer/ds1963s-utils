@@ -60,6 +60,8 @@ struct ds1963s_device
 	uint8_t		AUTH:1;
 	uint8_t		MATCH:1;
 	uint8_t		OD:1;
+	uint8_t		PF:1;
+	uint8_t		RC:1;
 
 	uint8_t		ES;
 
@@ -76,6 +78,9 @@ extern "C" {
 void     ds1963s_dev_init(struct ds1963s_device *dev);
 void     ds1963s_dev_destroy(struct ds1963s_device *dev);
 uint64_t ds1963s_rom_code_get(struct ds1963s_device *dev);
+
+int   ds1963s_dev_pf_get(struct ds1963s_device *dev);
+void  ds1963s_dev_pf_set(struct ds1963s_device *dev, int pf);
 
 void ds1963s_dev_connect_bus(struct ds1963s_device *ds1963s, struct one_wire_bus *bus);
 int  ds1963s_dev_power_on(struct ds1963s_device *ds1963s);

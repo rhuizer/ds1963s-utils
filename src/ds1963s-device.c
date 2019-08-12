@@ -21,6 +21,7 @@
  */
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include "ds1963s-common.h"
@@ -34,8 +35,7 @@
 									\
 		v = one_wire_bus_member_tx_bit(&dev->bus_slave, bit);	\
 		if (v == ONE_WIRE_BUS_SIGNAL_RESET) {			\
-			DEBUG_LOG("[ds1963s] got reset pulse\n");	\
-			dev->state = DS1963S_STATE_RESET;		\
+			__ds1963s_dev_do_reset_pulse(dev);		\
 			return ONE_WIRE_BUS_SIGNAL_RESET;		\
 		}							\
 									\
@@ -48,8 +48,7 @@
 									\
 		v = one_wire_bus_member_tx_byte(&dev->bus_slave, byte);	\
 		if (v == ONE_WIRE_BUS_SIGNAL_RESET) {			\
-			DEBUG_LOG("[ds1963s] got reset pulse\n");	\
-			dev->state = DS1963S_STATE_RESET;		\
+			__ds1963s_dev_do_reset_pulse(dev);		\
 			return ONE_WIRE_BUS_SIGNAL_RESET;		\
 		}							\
 									\
@@ -162,6 +161,13 @@ static void __sha1_get_output_1(uint8_t SP[32], uint32_t A, uint32_t B,
 	SP[27] = (A >> 24) & 0xFF;
 }
 
+static inline void
+__ds1963s_dev_do_reset_pulse(struct ds1963s_device *dev)
+{
+	DEBUG_LOG("[ds1963s] got reset pulse\n");
+	dev->state = DS1963S_STATE_RESET;
+}
+
 void ds1963s_dev_init(struct ds1963s_device *ds1963s)
 {
 	memset(ds1963s, 0, sizeof *ds1963s);
@@ -188,6 +194,19 @@ void ds1963s_dev_destroy(struct ds1963s_device *ds1963s)
 
 	list_del(&ds1963s->bus_slave.list_entry);
 	memset(ds1963s, 0, sizeof *ds1963s);
+}
+
+int
+ds1963s_dev_pf_get(struct ds1963s_device *dev)
+{
+	return (dev->ES >> 5) & 1;
+}
+
+void
+ds1963s_dev_pf_set(struct ds1963s_device *dev, int pf)
+{
+	dev->ES &= ~(1 << 5);
+	dev->ES |= pf << 5;
 }
 
 uint16_t
@@ -377,10 +396,21 @@ void ds1963s_dev_sign_data_page(struct ds1963s_device *ds1963s)
 	);
 }
 
+
+void
+ds1963s_dev_rom_command_resume(struct ds1963s_device *dev)
+{
+	if (dev->RC == 1)
+		dev->state = DS1963S_STATE_MEMORY_FUNCTION;
+	else
+		dev->state = DS1963S_STATE_RESET_WAIT;
+}
+
 int ds1963s_dev_rom_command_search_rom(struct ds1963s_device *dev)
 {
 	uint8_t rom_code[8];
 
+	dev->RC = 0;
 	ds1963s_dev_rom_code_get(dev, rom_code);
 
 	for (int i = 0; i < sizeof(rom_code); i++) {
@@ -404,6 +434,7 @@ int ds1963s_dev_rom_command_search_rom(struct ds1963s_device *dev)
 	}
 
 	DEBUG_LOG("search rom match\n");
+	dev->RC = 1;
 
 	return 0;
 }
@@ -418,7 +449,12 @@ ds1963s_dev_rom_function(struct ds1963s_device *dev)
 	switch (byte) {
 	case 0x3C:
 		DEBUG_LOG("[ds1963s|ROM] Overdrive skip ROM\n");
+		dev->RC = 0;
 		dev->OD = 1;
+		break;
+	case 0xA5:
+		DEBUG_LOG("[ds1963s|ROM] Resume\n");
+		ds1963s_dev_rom_command_resume(dev);
 		break;
 	case 0xF0:
 		DEBUG_LOG("[ds1963s|ROM] Search ROM\n");
@@ -429,24 +465,120 @@ ds1963s_dev_rom_function(struct ds1963s_device *dev)
 		break;
 	default:
 		DEBUG_LOG("[ds1963s|ROM] Unknown command %.2x\n", byte);
+		abort();
 		break;
 	}
 
 	return 0;
 }
 
+int
+ds1963s_dev_memory_command_write_scratchpad(struct ds1963s_device *dev)
+{
+	unsigned char data[35];
+	uint8_t  offset;
+	uint16_t addr;
+	int      i;
+
+	dev->CHLG = 0;
+	dev->AUTH = 0;
+	dev->TA1  = DS1963S_RX_BYTE(dev);
+	dev->TA2  = DS1963S_RX_BYTE(dev);
+	addr      = ds1963s_ta_to_address(dev->TA1, dev->TA2);
+	offset    = dev->TA1 & 0x1F;
+
+	/* Keep track for crc16 calculation
+	 * XXX: later switch to stream based crc16
+	 */
+	data[0] = 0x0F;
+	data[1] = dev->TA1;
+	data[2] = dev->TA2;
+
+	if (dev->HIDE == 0) {
+		if (addr >= 0x200) goto done;
+		dev->ES &= 0x5F;		/* PF := 0; AA := 0 */
+	} else {
+		if (!ds1963s_address_secret(addr)) goto done;
+		dev->ES  &= 0x5F;		/* PF := 0; AA := 0 */
+		dev->TA1 &= 0xF8;		/* T2:T0 := 0,0,0 */
+		dev->ES  &= 0xE0;		/* E4:E0 := 0,0,0,0,0 */
+		dev->ES  |= dev->TA1 & 0x1F;	/* E4:E0 := T4:T0     */
+		dev->ES  |= 0x07;		/* E2:E0 := 1,1,1     */
+	}
+
+	for (i = 3; offset < 32; i++, offset++) {
+		int byte;
+
+		/* XXX: does not properly handle 8-bit boundaries. */
+		byte = one_wire_bus_member_rx_byte(&dev->bus_slave);
+		if (byte == ONE_WIRE_BUS_SIGNAL_RESET) {
+			__ds1963s_dev_do_reset_pulse(dev);
+			dev->PF = 1;
+			return ONE_WIRE_BUS_SIGNAL_RESET;
+		}
+
+		if (dev->HIDE == 0) {
+			DEBUG_LOG("SP[%d] = %.2x\n", offset, byte);
+			dev->scratchpad[offset] = byte;
+		}
+
+		data[i] = byte;
+	}
+
+	/* If the full scratchpad was written we send the crc16. */
+	if (offset == 32) {
+		uint16_t crc16;
+
+		crc16 = ~ds1963s_crc16(data, i);
+		DS1963S_TX_BYTE(dev, crc16 & 0xFF);
+		DS1963S_TX_BYTE(dev, crc16 >> 8);
+	}
+
+done:
+	while (1)
+		DS1963S_TX_BIT(dev, 1);
+}
+
+int
+ds1963s_dev_memory_command_read_scratchpad(struct ds1963s_device *dev)
+{
+	unsigned char data[36];
+	uint8_t  offset;
+	uint16_t crc16;
+	int      i;
+
+	DS1963S_TX_BYTE(dev, dev->TA1);
+	DS1963S_TX_BYTE(dev, dev->TA2);
+	DS1963S_TX_BYTE(dev, dev->ES);
+
+	offset = dev->TA1 & 0x1F;
+
+	data[0] = 0xAA;
+	data[1] = dev->TA1;
+	data[2] = dev->TA2;
+	data[3] = dev->ES;
+
+	for (i = 4; offset < 32; i++, offset++) {
+		int byte = dev->HIDE ? 0xFF : dev->scratchpad[offset];
+		DS1963S_TX_BYTE(dev, byte);
+		data[i] = byte;
+	}
+
+	crc16 = ~ds1963s_crc16(data, i);
+	DS1963S_TX_BYTE(dev, crc16 & 0xFF);
+	DS1963S_TX_BYTE(dev, crc16 >> 8);
+
+	while (1)
+		DS1963S_TX_BIT(dev, 1);
+}
 
 int
 ds1963s_dev_memory_command_erase_scratchpad(struct ds1963s_device *dev)
 {
-	uint8_t  TA1, TA2;
-
 	dev->CHLG = 0;
 	dev->AUTH = 0;
-
-	/* XXX: Unclear if these update the device TA registers. */
-	TA1  = DS1963S_RX_BYTE(dev);
-	TA2  = DS1963S_RX_BYTE(dev);
+	dev->TA1  = DS1963S_RX_BYTE(dev);
+	dev->TA2  = DS1963S_RX_BYTE(dev);
 
 	memset(dev->scratchpad, 0, sizeof dev->scratchpad);
 	/* Simulate TX 1s until the command is finished.
@@ -507,6 +639,14 @@ ds1963s_dev_memory_function(struct ds1963s_device *dev)
 	byte = DS1963S_RX_BYTE(dev);
 
 	switch (byte) {
+	case 0x0F:
+		DEBUG_LOG("[ds1963s|MEMORY] Write Scratchpad\n");
+		ds1963s_dev_memory_command_write_scratchpad(dev);
+		break;
+	case 0xAA:
+		DEBUG_LOG("[ds1963s|MEMORY] Read Scratchpad\n");
+		ds1963s_dev_memory_command_read_scratchpad(dev);
+		break;
 	case 0xC3:
 		DEBUG_LOG("[ds1963s|MEMORY] Erase Scratchpad\n");
 		ds1963s_dev_memory_command_erase_scratchpad(dev);
@@ -517,6 +657,7 @@ ds1963s_dev_memory_function(struct ds1963s_device *dev)
 		break;
 	default:
 		DEBUG_LOG("[ds1963s|MEMORY] Unknown command %.2x\n", byte);
+		abort();
 		break;
 	}
 

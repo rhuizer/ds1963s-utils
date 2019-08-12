@@ -34,6 +34,7 @@ uint16_t ds1963s_crc16(const uint8_t *buf, size_t count);
 uint16_t ds1963s_ta_to_address(uint8_t TA1, uint8_t TA2);
 void     ds1963s_address_to_ta(uint16_t address, uint8_t *TA1, uint8_t *TA2);
 int      ds1963s_address_to_page(int address);
+int      ds1963s_address_secret(int address);
 
 #ifdef __cplusplus
 };

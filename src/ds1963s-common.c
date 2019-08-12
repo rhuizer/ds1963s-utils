@@ -97,3 +97,9 @@ ds1963s_address_to_page(int address)
 
         return address / 32;
 }
+
+int
+ds1963s_address_secret(int address)
+{
+	return address >= 0x200 && address <= 0x23F;
+}
