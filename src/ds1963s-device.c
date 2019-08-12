@@ -55,6 +55,20 @@
 		v;							\
 	})
 
+
+#define DS1963S_TX_FAIL(dev)						\
+	do {								\
+		DS1963S_TX_BIT(dev, 1);					\
+	} while (1)
+
+#define DS1963S_TX_SUCCESS(dev)						\
+	do {								\
+		DS1963S_TX_BIT(dev, 0);					\
+		DS1963S_TX_BIT(dev, 1);					\
+	} while (1)
+
+#define DS1963S_TX_END(dev) DS1963S_TX_FAIL(dev)
+
 #define DS1963S_RX_BIT(dev)	DS1963S_TX_BIT(dev, 1)
 #define DS1963S_RX_BYTE(dev)	DS1963S_TX_BYTE(dev, 0xFF)
 
@@ -356,13 +370,6 @@ void ds1963s_dev_sign_data_page(struct ds1963s_device *ds1963s)
 	uint8_t M[64];
 	SHA1_CTX ctx;
 
-	/* XXX: set properly. */
-	ds1963s->M = 0;
-
-	ds1963s->X = 0;
-	ds1963s->CHLG = 0;
-	ds1963s->AUTH = 0;
-
 	__sha1_get_input_1(
 		M,
 		ds1963s->secret_memory,
@@ -523,20 +530,85 @@ ds1963s_dev_memory_command_write_scratchpad(struct ds1963s_device *dev)
 	}
 
 done:
-	while (1)
-		DS1963S_TX_BIT(dev, 1);
+	DS1963S_TX_END(dev);
+}
+
+int
+ds1963s_dev_sha_command_sign_data_page(struct ds1963s_device *dev)
+{
+	uint16_t addr;
+	int      page;
+
+	addr = ds1963s_ta_to_address(dev->TA1, dev->TA2);
+	page = ds1963s_address_to_page(addr);
+
+	if (page != 0 && page != 8)
+		goto fail;
+
+	/* XXX: set properly. */
+	dev->M = 0;
+
+	dev->X = 0;
+	dev->CHLG = 0;
+	dev->AUTH = 0;
+	dev->TA1 &= 0xE0;	/* T4:T0 = 00000b */
+
+	ds1963s_dev_sign_data_page(dev);
+	DS1963S_TX_SUCCESS(dev);
+
+fail:
+	DS1963S_TX_FAIL(dev);
 }
 
 int
 ds1963s_dev_memory_command_compute_sha(struct ds1963s_device *dev)
 {
-	uint8_t  TA1, TA2, ctrl;
-	uint16_t addr;
+	uint16_t crc16;
+	uint8_t  ctrl;
 
-	TA1  = DS1963S_RX_BYTE(dev);
-	TA2  = DS1963S_RX_BYTE(dev);
-	ctrl = DS1963S_RX_BYTE(dev);
-	addr = ds1963s_ta_to_address(TA1, TA2);
+	dev->TA1 = DS1963S_RX_BYTE(dev);
+	dev->TA2 = DS1963S_RX_BYTE(dev);
+	ctrl     = DS1963S_RX_BYTE(dev);
+
+	crc16    = 0;
+	crc16    = ds1963s_crc16_update_byte(crc16, dev->TA1);
+	crc16    = ds1963s_crc16_update_byte(crc16, dev->TA2);
+	crc16    = ds1963s_crc16_update_byte(crc16, ctrl);
+	crc16    = ~crc16;
+	DS1963S_TX_BYTE(dev, crc16 & 0xFF);
+	DS1963S_TX_BYTE(dev, crc16 >> 8);
+
+	switch (ctrl) {
+	case 0x0F:
+		DEBUG_LOG("[ds1963s|SHA] Compute 1st Secret\n");
+//		ds1963s_dev_sha_command_compute_1st_secret(dev);
+		break;
+	case 0xF0:
+		DEBUG_LOG("[ds1963s|SHA] Compute next Secret\n");
+//		ds1963s_dev_sha_command_compute_next_secret(dev);
+		break;
+	case 0x3C:
+		DEBUG_LOG("[ds1963s|SHA] Validate Data Page\n");
+//		ds1963s_dev_sha_command_validate_data_page(dev);
+		break;
+	case 0xC3:
+		DEBUG_LOG("[ds1963s|SHA] Sign Data Page\n");
+		return ds1963s_dev_sha_command_sign_data_page(dev);
+	case 0xCC:
+		DEBUG_LOG("[ds1963s|SHA] Compute Challenge\n");
+//		ds1963s_dev_sha_command_compute_challenge(dev);
+		break;
+	case 0xAA:
+		DEBUG_LOG("[ds1963s|SHA] Authenticate Host\n");
+//		ds1963s_dev_sha_command_authenticate_host(dev);
+		break;
+	default:
+		DEBUG_LOG("[ds1963s|SHA] Unknown command %.2x\n", ctrl);
+		abort();
+		break;
+	}
+
+	return 0;
 }
 
 int
@@ -571,15 +643,10 @@ ds1963s_dev_memory_command_copy_scratchpad(struct ds1963s_device *dev)
 	for (int i = 0; i < 10; i++)
 		DS1963S_TX_BIT(dev, 1);
 
-	/* Send 010101.. pattern until we get a reset. */
-	while (1) {
-		DS1963S_TX_BIT(dev, 0);
-		DS1963S_TX_BIT(dev, 1);
-	}
+	DS1963S_TX_SUCCESS(dev);
 
 error:
-	while (1)
-		DS1963S_TX_BIT(dev, 1);
+	DS1963S_TX_FAIL(dev);
 }
 
 int
@@ -642,15 +709,10 @@ ds1963s_dev_memory_command_read_authenticated_page(struct ds1963s_device *dev)
 	for (int i = 0; i < 10; i++)
 		DS1963S_TX_BIT(dev, 1);
 
-	/* Send 010101.. pattern until we get a reset. */
-	while (1) {
-		DS1963S_TX_BIT(dev, 0);
-		DS1963S_TX_BIT(dev, 1);
-	}
+	DS1963S_TX_SUCCESS(dev);
 
 error:
-	while (1)
-		DS1963S_TX_BIT(dev, 1);
+	DS1963S_TX_FAIL(dev);
 }
 
 int
@@ -681,9 +743,7 @@ ds1963s_dev_memory_command_read_scratchpad(struct ds1963s_device *dev)
 	crc16 = ~crc16;
 	DS1963S_TX_BYTE(dev, crc16 & 0xFF);
 	DS1963S_TX_BYTE(dev, crc16 >> 8);
-
-	while (1)
-		DS1963S_TX_BIT(dev, 1);
+	DS1963S_TX_END(dev);
 }
 
 int
@@ -705,11 +765,7 @@ ds1963s_dev_memory_command_erase_scratchpad(struct ds1963s_device *dev)
 
 	dev->HIDE = 0;
 
-	/* Send 010101.. pattern until we get a reset. */
-	while (1) {
-		DS1963S_TX_BIT(dev, 0);
-		DS1963S_TX_BIT(dev, 1);
-	}
+	DS1963S_TX_SUCCESS(dev);
 }
 
 int
@@ -741,8 +797,7 @@ ds1963s_dev_memory_command_read_memory(struct ds1963s_device *dev)
 		addr += 1;
 	}
 
-	while (1)
-		DS1963S_TX_BIT(dev, 1);
+	DS1963S_TX_END(dev);
 }
 
 int
