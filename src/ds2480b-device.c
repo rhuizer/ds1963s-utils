@@ -313,8 +313,13 @@ ds2480b_dev_command_configuration(struct ds2480b_device *dev, unsigned char byte
 	param_value = (byte >> 1) & 7;
 
 	DEBUG_LOG("  Configuration param: %s (0x%.2x) value: %s (0x%.2x)\n",
-		  __param_code_names[param_code], param_code,
-		  __param_value_names[param_code][param_value], param_value);
+		__param_code_names[param_code],
+		param_code,
+		param_code == DS2480_PARAM_PARMREAD ?
+			__param_code_names[param_value] :
+			__param_value_names[param_code][param_value],
+		param_value
+	);
 
 	/* param_code is 0 for read requests, and param_value will select the
 	 * parameter to read.
