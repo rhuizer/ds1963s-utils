@@ -36,4 +36,17 @@ struct ds1963s_tool
 #endif
 };
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void
+ds1963s_tool_secrets_get(struct ds1963s_tool *tool,
+                         struct ds1963s_rom *rom,
+                         uint32_t counters[16]);
+
+#ifdef __cplusplus
+};
+#endif
+
 #endif

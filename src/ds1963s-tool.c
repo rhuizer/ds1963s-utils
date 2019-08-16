@@ -244,13 +244,107 @@ int ds1963s_tool_info_full_disclaimer(void)
 	return ch == 'y' || ch == 'Y';
 }
 
-void ds1963s_tool_info_full(struct ds1963s_tool *tool, int format)
+void xds1963s_tool_secret_hmac_target_get(
+	struct ds1963s_tool *tool,
+	int secret,
+	int link)
+{
+	int ret;
+
+	ret = ds1963s_tool_secret_hmac_target_get(tool, secret, link);
+	if (ret == -1) {
+		ds1963s_client_perror(&tool->client,
+			"ds1963s_tool_secret_hmac_target_get()");
+		ds1963s_tool_fatal(tool);
+	}
+}
+
+void
+xds1963s_client_memory_read(struct ds1963s_tool *tool,
+                            uint16_t address, uint8_t *data, size_t size)
+{
+	int ret;
+
+	ret = ds1963s_client_memory_read(&tool->client, address, data, size);
+	if (ret == -1) {
+		ds1963s_client_perror(&tool->client,
+			"ds1963s_client_memory_read()");
+		ds1963s_tool_fatal(tool);
+	}
+}
+
+void
+xds1963s_client_secret_write(struct ds1963s_tool *tool,
+                             int secret, const void *data, size_t len)
+{
+	int ret;
+
+	ret = ds1963s_client_secret_write(&tool->client, secret, data, len);
+	if (ret == -1) {
+		ds1963s_client_perror(&tool->client,
+			"ds1963s_client_secret_write()");
+		ds1963s_tool_fatal(tool);
+	}
+}
+
+void
+ds1963s_tool_secrets_get(struct ds1963s_tool *tool,
+                         struct ds1963s_rom *rom,
+                         uint32_t counters[16])
+{
+	uint8_t buf[256];
+
+	/* Initialize the brute forcer state. */
+	for (int i = 0; i < 8; i++) {
+		xds1963s_client_memory_read(
+			tool,
+			32 * i,
+			&buf[32 * i],
+			32
+		);
+	}
+
+	memcpy(tool->brute.dev.serial, rom->serial, 6);
+	memcpy(tool->brute.dev.data_memory, buf, sizeof buf);
+
+	/* Initialize the write cycle counters. */
+	for (int i = 0; i < 8; i++) {
+		tool->brute.dev.data_wc[i]   = counters[i];
+		tool->brute.dev.secret_wc[i] = counters[i + 8];
+	}
+
+	fprintf(stderr, "\n01. Calculating HMAC links.\n");
+	for (int secret = 0; secret < 8; secret++) {
+		for (int link = 0; link < 4; link++) {
+			fprintf(stderr, "\r    Secret #%d [%d/4]", secret, link);
+			xds1963s_tool_secret_hmac_target_get(tool, secret, link);
+		}
+		fprintf(stderr, "\r    Secret #%d [4/4]\n", secret);
+	}
+
+	fprintf(stderr, "02. Calculating secrets from HMAC links.\n");
+	for (int secret = 0; secret < 8; secret++) {
+		for (int link = 3; link >= 0; link--)
+			ds1963s_tool_brute_link(tool, secret, link);
+	}
+
+	fprintf(stderr, "03. Restoring recovered keys.\n");
+
+	for (int secret = 0; secret < 8; secret++) {
+		fprintf(stderr, "    Secret #%d\n", secret);
+        	xds1963s_client_secret_write(
+			tool,
+			secret,
+			tool->brute.secrets[secret].secret,
+			8
+		);
+        }
+}
+
+void ds1963s_tool_info_full_text(struct ds1963s_tool *tool)
 {
 	struct ds1963s_rom rom;
 	uint32_t counters[16];
-	uint8_t buf[256];
-	int i, secret;
-	int link;
 
 	if (ds1963s_tool_info_full_disclaimer() == 0)
 		return;
@@ -268,68 +362,27 @@ void ds1963s_tool_info_full(struct ds1963s_tool *tool, int format)
 	printf("\nPRNG Counter: 0x%.8x\n",
 		ds1963s_client_prng_get(&tool->client));
 
-	/* Initialize the brute forcer state. */
-	for (i = 0; i < 8; i++) {
-		int r;
-
-		r = ds1963s_client_memory_read(
-			&tool->client,
-			32 * i,
-			&buf[32 * i],
-			32
-		);
-
-		if (r == -1) {
-			ds1963s_client_perror(&tool->client,
-				"ds1963s_client_memory_read()");
-			ds1963s_tool_fatal(tool);
-		}
-	}
-
-	memcpy(tool->brute.dev.serial, rom.serial, 6);
-	memcpy(tool->brute.dev.data_memory, buf, sizeof buf);
-
-	/* Initialize the write cycle counters. */
-	for (i = 0; i < 8; i++) {
-		tool->brute.dev.data_wc[i]   = counters[i];
-		tool->brute.dev.secret_wc[i] = counters[i + 8];
-	}
-
-	for (secret = 0; secret < 8; secret++) {
-		for (link = 0; link < 4; link++) {
-//			printf("\r    Secret #%d [%d/4]", secret, link);
-//			fflush(stdout);
-			ds1963s_tool_secret_hmac_target_get(tool, secret, link);
-		}
-//		printf("\r    Secret #%d [4/4]\n", secret);
-	}
+	ds1963s_tool_secrets_get(tool, &rom, counters);
 
 	printf("\nSecrets dump\n");
 	printf("------------\n");
-	fflush(stdout);
-	for (secret = 0; secret < 8; secret++) {
-		for (link = 3; link >= 0; link--)
-			ds1963s_tool_brute_link(tool, secret, link);
 
+	for (int secret = 0; secret < 8; secret++) {
 		printf("Secret %d: ", secret);
-		for (i = 0; i < 8; i++)
+		for (int i = 0; i < 8; i++)
 			printf("%.2x", tool->brute.secrets[secret].secret[i]);
 		printf("\n");
-		fflush(stdout);
 	}
+}
 
-//	printf("03. Restoring recovered keys.\n");
-
-	for (secret = 0; secret < 8; secret++) {
-//		printf("    Secret #%d\n", secret);
-        	ds1963s_client_secret_write(
-			&tool->client,
-			secret,
-			tool->brute.secrets[secret].secret,
-			8
-		);
-        }
-
+void ds1963s_tool_info_full(struct ds1963s_tool *tool, int format)
+{
+#ifdef HAVE_LIBYAML
+	if (format == FORMAT_YAML)
+		ds1963s_tool_info_full_yaml(tool);
+	else
+#endif
+		ds1963s_tool_info_full_text(tool);
 }
 
 void ds1963s_tool_write(struct ds1963s_tool *tool, uint16_t address,
