@@ -82,63 +82,40 @@ __yaml_add_string(yaml_emitter_t *emitter, const char *name)
 void
 ds1963s_tool_rom_print_yaml(struct ds1963s_tool *tool, struct ds1963s_rom *rom)
 {
-	yaml_emitter_t *emitter;
-	yaml_event_t event;
 	char buf[32];
 
 	assert(tool != NULL);
 	assert(rom != NULL);
 
-	emitter = &tool->emitter;
-
 	/* rom family */
 	__yaml_add_string(&tool->emitter, "family");
 
 	snprintf(buf, sizeof buf, "0x%.2x", rom->family);
-	yaml_scalar_event_initialize(&event, NULL, (yaml_char_t *)YAML_INT_TAG,
-		(yaml_char_t *)buf, strlen(buf), 1, 0, YAML_PLAIN_SCALAR_STYLE);
-	if (!yaml_emitter_emit(emitter, &event)) goto error;
+	__yaml_add_int(&tool->emitter, buf);
 
 	/* rom serial */
 	__yaml_add_string(&tool->emitter, "serial");
 
 	for (int i = 0; i < sizeof(rom->serial); i++) {
 		snprintf(&buf[i * 2], sizeof(buf) - i * 2, "%.2x",
-			rom->serial[sizeof(rom->serial) - i - 1]);
+		         rom->serial[sizeof(rom->serial) - i - 1]);
 	}
 	__yaml_add_string(&tool->emitter, buf);
 
 	/* rom crc8 */
 	__yaml_add_string(&tool->emitter, "crc8");
-
 	snprintf(buf, sizeof buf, "0x%.2x", rom->crc);
-	yaml_scalar_event_initialize(&event, NULL, (yaml_char_t *)YAML_INT_TAG,
-		(yaml_char_t *)buf, strlen(buf), 1, 0, YAML_PLAIN_SCALAR_STYLE);
-	if (!yaml_emitter_emit(emitter, &event)) goto error;
-
-	return;
-
-error:
-	__yaml_emitter_error(emitter, &event);
+	__yaml_add_int(&tool->emitter, buf);
 }
 
 static void
 __write_cycle_print_yaml(yaml_emitter_t *emitter, const char *name, uint32_t value)
 {
-	yaml_event_t event;
 	char buf[32];
 
-	yaml_scalar_event_initialize(&event, NULL, (yaml_char_t *)YAML_STR_TAG,
-		(yaml_char_t *)name, strlen(name), 1, 0, YAML_PLAIN_SCALAR_STYLE);
-	if (!yaml_emitter_emit(emitter, &event))
-		__yaml_emitter_error(emitter, &event);
-
+	__yaml_add_string(emitter, name);
 	snprintf(buf, sizeof buf, "0x%.8x", value);
-	yaml_scalar_event_initialize(&event, NULL, (yaml_char_t *)YAML_INT_TAG,
-		(yaml_char_t *)buf, strlen(buf), 1, 0, YAML_PLAIN_SCALAR_STYLE);
-	if (!yaml_emitter_emit(emitter, &event))
-		__yaml_emitter_error(emitter, &event);
-
+	__yaml_add_int(emitter, buf);
 }
 
 void
@@ -204,7 +181,7 @@ void ds1963s_tool_info_yaml(struct ds1963s_tool *tool)
 	if (!yaml_emitter_emit(&tool->emitter, &event))
 		__yaml_emitter_error(&tool->emitter, &event);
 
-	yaml_document_start_event_initialize(&event, NULL, NULL, NULL, 0);
+	yaml_document_start_event_initialize(&event, NULL, NULL, NULL, 1);
 	if (!yaml_emitter_emit(&tool->emitter, &event))
 		__yaml_emitter_error(&tool->emitter, &event);
 
@@ -225,7 +202,7 @@ void ds1963s_tool_info_yaml(struct ds1963s_tool *tool)
 
 	__yaml_end_map(&tool->emitter);
 
-	yaml_document_end_event_initialize(&event, 0);
+	yaml_document_end_event_initialize(&event, 1);
 	if (!yaml_emitter_emit(&tool->emitter, &event))
 		__yaml_emitter_error(&tool->emitter, &event);
 
