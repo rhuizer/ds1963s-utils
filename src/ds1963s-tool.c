@@ -53,6 +53,7 @@ struct ds1963s_tool
 int ds1963s_tool_init(struct ds1963s_tool *tool, const char *device)
 {
 	memset(tool, 0, sizeof *tool);
+	ds1963s_dev_init(&tool->brute.dev);
 	return ds1963s_client_init(&tool->client, device);
 }
 

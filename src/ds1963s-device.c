@@ -190,8 +190,6 @@ void ds1963s_dev_init(struct ds1963s_device *ds1963s)
 	memset(ds1963s->secret_memory, 0xaa, sizeof ds1963s->secret_memory);
 	memset(ds1963s->scratchpad,    0xff, sizeof ds1963s->scratchpad);
 
-	strcpy(ds1963s->data_memory, "Hello world!");
-
 	one_wire_bus_member_init(&ds1963s->bus_slave);
         ds1963s->bus_slave.device = (void *)ds1963s;
         ds1963s->bus_slave.driver = (void(*)(void *))ds1963s_dev_power_on;
@@ -610,7 +608,7 @@ ds1963s_dev_memory_command_copy_scratchpad(struct ds1963s_device *dev)
 	/* XXX: specs say this happens for 32us.  Investigate how many 1s
 	 * to send later.
 	 */
-	for (int i = 0; i < 10; i++)
+	for (int i = 0; i < 8; i++)
 		DS1963S_TX_BIT(dev, 1);
 
 	DS1963S_TX_SUCCESS(dev);
