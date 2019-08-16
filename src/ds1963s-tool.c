@@ -15,8 +15,10 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <sys/ioctl.h>
-#include "ds1963s-client.h"
-#include "ds1963s-device.h"
+#include "ds1963s-tool.h"
+#ifdef HAVE_LIBYAML
+#include "ds1963s-tool-yaml.h"
+#endif
 
 #define DEFAULT_SERIAL_PORT	"/dev/ttyUSB0"
 #define MODE_INFO		1
@@ -27,28 +29,8 @@
 #define MODE_WRITE_SECRET	32
 #define MODE_INFO_FULL		64
 
-struct ds1963s_brute_secret
-{
-	int		state;
-	uint8_t		target_hmac[4][20];
-	uint8_t		secret[8];
-};
-
-struct ds1963s_brute
-{
-	int				log_fd;
-	struct ds1963s_device		dev;
-	struct ds1963s_brute_secret	secrets[8];
-};
-
-struct ds1963s_tool
-{
-	/* Client for communication with a DS1963S ibutton. */
-	struct ds1963s_client client;
-
-	/* Side-channel module used for dumping secrets. */
-	struct ds1963s_brute brute;
-};
+#define FORMAT_TEXT		1
+#define FORMAT_YAML		2
 
 int ds1963s_tool_init(struct ds1963s_tool *tool, const char *device)
 {
@@ -161,7 +143,8 @@ void *ds1963s_tool_brute_link(struct ds1963s_tool *tool, int secret, int link)
 }
 
 
-void ds1963s_tool_memory_dump(struct ds1963s_tool *tool)
+void
+ds1963s_tool_memory_dump_text(struct ds1963s_tool *tool)
 {
 	struct ds1963s_client *ctx = &tool->client;
 	uint8_t page[32];
@@ -179,7 +162,8 @@ void ds1963s_tool_memory_dump(struct ds1963s_tool *tool)
 	}
 }
 
-void ds1963s_tool_rom_print(struct ds1963s_rom *rom)
+void
+ds1963s_tool_rom_print_text(struct ds1963s_tool *tool, struct ds1963s_rom *rom)
 {
 	int i;
 
@@ -194,7 +178,8 @@ void ds1963s_tool_rom_print(struct ds1963s_rom *rom)
 	printf("\nCRC8  : 0x%.2x\n", rom->crc);
 }
 
-void ds1963s_tool_write_cycle_counters_print(uint32_t counters[16])
+void
+ds1963s_tool_write_cycle_counters_print_text(struct ds1963s_tool *tool, uint32_t counters[16])
 {
 	printf("\nWrite cycle counter states\n");
 	printf("--------------------------\n");
@@ -216,23 +201,33 @@ void ds1963s_tool_write_cycle_counters_print(uint32_t counters[16])
 	printf("Secret     7: 0x%.8x\n", counters[15]);
 }
 
-void ds1963s_tool_info(struct ds1963s_tool *tool)
+void ds1963s_tool_info_text(struct ds1963s_tool *tool)
 {
 	struct ds1963s_rom rom;
 	uint32_t counters[16];
 
 	if (ds1963s_client_rom_get(&tool->client, &rom) != -1)
-		ds1963s_tool_rom_print(&rom);
+		ds1963s_tool_rom_print_text(tool, &rom);
 
 	if (ds1963s_write_cycle_get_all(&tool->client, counters) != -1)
-		ds1963s_tool_write_cycle_counters_print(counters);
+		ds1963s_tool_write_cycle_counters_print_text(tool, counters);
 
 	printf("\n4096-bit NVRAM dump\n");
 	printf("-------------------\n");
-	ds1963s_tool_memory_dump(tool);
+	ds1963s_tool_memory_dump_text(tool);
 
 	printf("\nPRNG Counter: 0x%.8x\n",
 		ds1963s_client_prng_get(&tool->client));
+}
+
+void ds1963s_tool_info(struct ds1963s_tool *tool, int format)
+{
+#ifdef HAVE_LIBYAML
+	if (format == FORMAT_YAML)
+		ds1963s_tool_info_yaml(tool);
+	else
+#endif
+		ds1963s_tool_info_text(tool);
 }
 
 int ds1963s_tool_info_full_disclaimer(void)
@@ -249,7 +244,7 @@ int ds1963s_tool_info_full_disclaimer(void)
 	return ch == 'y' || ch == 'Y';
 }
 
-void ds1963s_tool_info_full(struct ds1963s_tool *tool)
+void ds1963s_tool_info_full(struct ds1963s_tool *tool, int format)
 {
 	struct ds1963s_rom rom;
 	uint32_t counters[16];
@@ -261,14 +256,14 @@ void ds1963s_tool_info_full(struct ds1963s_tool *tool)
 		return;
 
 	if (ds1963s_client_rom_get(&tool->client, &rom) != -1)
-		ds1963s_tool_rom_print(&rom);
+		ds1963s_tool_rom_print_text(tool, &rom);
 
 	if (ds1963s_write_cycle_get_all(&tool->client, counters) != -1)
-		ds1963s_tool_write_cycle_counters_print(counters);
+		ds1963s_tool_write_cycle_counters_print_text(tool, counters);
 
 	printf("\n4096-bit NVRAM dump\n");
 	printf("-------------------\n");
-	ds1963s_tool_memory_dump(tool);
+	ds1963s_tool_memory_dump_text(tool);
 
 	printf("\nPRNG Counter: 0x%.8x\n",
 		ds1963s_client_prng_get(&tool->client));
@@ -311,6 +306,7 @@ void ds1963s_tool_info_full(struct ds1963s_tool *tool)
 
 	printf("\nSecrets dump\n");
 	printf("------------\n");
+	fflush(stdout);
 	for (secret = 0; secret < 8; secret++) {
 		for (link = 3; link >= 0; link--)
 			ds1963s_tool_brute_link(tool, secret, link);
@@ -319,6 +315,7 @@ void ds1963s_tool_info_full(struct ds1963s_tool *tool)
 		for (i = 0; i < 8; i++)
 			printf("%.2x", tool->brute.secrets[secret].secret[i]);
 		printf("\n");
+		fflush(stdout);
 	}
 
 //	printf("03. Restoring recovered keys.\n");
@@ -524,7 +521,7 @@ static const struct option options[] =
 	{ NULL,			0,	NULL,	 0  }
 };
 
-const char optstr[] = "a:d:hr:p:s:ifw";
+const char optstr[] = "a:d:hr:p:s:ifwy";
 
 int main(int argc, char **argv)
 {
@@ -534,10 +531,12 @@ int main(int argc, char **argv)
 	int mask, mode, o;
 	uint8_t data[32];
 	size_t len;
+	int format;
 	int secret;
 	int i;
 
 	len = mode = 0;
+	format = FORMAT_TEXT;
 	address = page = secret = size = -1;
 	while ( (o = getopt_long(argc, argv, optstr, options, &i)) != -1) {
 		switch (o) {
@@ -589,6 +588,9 @@ int main(int argc, char **argv)
 		case 'w':
 			mode = MODE_WRITE;
 			break;
+		case 'y':
+			format = FORMAT_YAML;
+			break;
 		}
 	}
 
@@ -629,10 +631,10 @@ int main(int argc, char **argv)
 
 	switch (mode) {
 	case MODE_INFO:
-		ds1963s_tool_info(&tool);
+		ds1963s_tool_info(&tool, format);
 		break;
 	case MODE_INFO_FULL:
-		ds1963s_tool_info_full(&tool);
+		ds1963s_tool_info_full(&tool, format);
 		break;
 	case MODE_READ:
 		ds1963s_tool_read(&tool, address, size);
