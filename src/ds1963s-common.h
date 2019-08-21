@@ -38,6 +38,8 @@ void     ds1963s_address_to_ta(uint16_t address, uint8_t *TA1, uint8_t *TA2);
 int      ds1963s_address_to_page(int address);
 int      ds1963s_address_secret(int address);
 
+int      hex_decode(uint8_t *dst, const char *src, size_t n);
+
 #ifdef __cplusplus
 };
 #endif

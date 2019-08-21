@@ -29,6 +29,7 @@
 #include <getopt.h>
 #include <sys/ioctl.h>
 #include "ds1963s-tool.h"
+#include "ds1963s-common.h"
 #ifdef HAVE_LIBYAML
 #include "ds1963s-tool-yaml.h"
 #endif
@@ -515,38 +516,6 @@ ds1963s_tool_sign(struct ds1963s_tool *tool, int page, size_t size)
 	ds1963s_client_hash_print(hash);
 }
 
-static inline int
-__dehex_char(char c)
-{
-	if (c >= '0' && c <= '9')
-		return c - '0';
-
-	c = tolower(c);
-
-	if (c >= 'a' && c <= 'f')
-		return 10 + c - 'a';
-
-	return -1;
-}
-
-int __dehex(uint8_t *dst, const char *src, size_t n)
-{
-	size_t src_len = strlen(src);
-	size_t i, j;
-
-	if (src_len == 0 || src_len % 2 != 0)
-		return -1;
-
-	for (i = 0; i < src_len; i++)
-		if (!isalnum(src[i]))
-			return -1;
-
-	for (i = j = 0; i < src_len - 1 && j < n; i += 2, j++)
-		dst[j] = __dehex_char(src[i]) * 16 + __dehex_char(src[i + 1]);
-
-	return 0;
-}
-
 void usage(const char *progname)
 {
 	fprintf(stderr, "Usage: %s [OPTION] [DATA]\n",
@@ -675,7 +644,7 @@ int main(int argc, char **argv)
 			exit(EXIT_FAILURE);
 		}
 
-		if (__dehex(data, argv[optind], 32) == -1) {
+		if (hex_decode(data, argv[optind], 32) == -1) {
 			usage(argv[0]);
 			exit(EXIT_FAILURE);
 		}

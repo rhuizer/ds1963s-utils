@@ -20,6 +20,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include <stddef.h>
+#include <string.h>
+#include <ctype.h>
 #include "ds1963s-common.h"
 
 static uint8_t ds1963s_crc8_table[] = {
@@ -115,4 +117,37 @@ int
 ds1963s_address_secret(int address)
 {
 	return address >= 0x200 && address <= 0x23F;
+}
+
+static inline int
+__dehex_char(char c)
+{
+	if (c >= '0' && c <= '9')
+		return c - '0';
+
+	c = tolower(c);
+
+	if (c >= 'a' && c <= 'f')
+		return 10 + c - 'a';
+
+	return -1;
+}
+
+int
+hex_decode(uint8_t *dst, const char *src, size_t n)
+{
+	size_t src_len = strlen(src);
+	size_t i, j;
+
+	if (src_len == 0 || src_len % 2 != 0)
+		return -1;
+
+	for (i = 0; i < src_len; i++)
+		if (!isalnum(src[i]))
+			return -1;
+
+	for (i = j = 0; i < src_len - 1 && j < n; i += 2, j++)
+		dst[j] = __dehex_char(src[i]) * 16 + __dehex_char(src[i + 1]);
+
+	return 0;
 }

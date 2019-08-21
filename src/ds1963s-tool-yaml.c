@@ -160,7 +160,7 @@ __write_cycle_print_yaml(yaml_emitter_t *emitter, const char *name, uint32_t val
 void
 ds1963s_tool_write_cycle_counters_print_yaml(struct ds1963s_tool *tool, uint32_t counters[16])
 {
-	__yaml_add_string(&tool->emitter, "write-cycle-counters");
+	__yaml_add_string(&tool->emitter, "write_cycle_counters");
 	__yaml_start_map(&tool->emitter);
 	__write_cycle_print_yaml(&tool->emitter, "data_page_08", counters[0]);
 	__write_cycle_print_yaml(&tool->emitter, "data_page_09", counters[1]);

@@ -20,32 +20,86 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+#include <stdio.h>
 #include <stdlib.h>
+#include <getopt.h>
 #include "ds1963s-device.h"
 #include "ds2480b-device.h"
 #include "transport-factory.h"
 #include "transport-unix.h"
+#ifdef HAVE_LIBYAML
+#include "ds1963s-emulator-yaml.h"
+#endif
 
+#define PROGNAME                "ds1963s-emulator"
 #define UNIX_SOCKET_PATH	"/tmp/.ds2480-serial"
 
-int main(void)
+static const struct option options[] = {
+	{ "config",             1,      NULL,   'c' },
+	{ "device",             1,      NULL,   'd' },
+	{ "help",               0,      NULL,   'h' }
+};
+
+const char optstr[] = "c:d:h";
+
+void usage(const char *progname)
+{
+	fprintf(stderr, "Use as: %s [OPTION]\n", progname ?: PROGNAME);
+	fprintf(stderr, "   -c --config=pathname  the configuration file to "
+	                "use.\n");
+	fprintf(stderr, "   -d --device=pathname  the unix socket to use as "
+	                "serial device.\n");
+	fprintf(stderr, "   -h --help             display the help menu.\n");
+}
+
+int main(int argc, char **argv)
 {
 	struct ds1963s_device ds1963s;
 	struct ds2480b_device ds2480b;
 	struct transport *serial;
 	struct one_wire_bus bus;
+	const char *config_name;
+	const char *device_name;
+	int i, o;
+
+	config_name = NULL;
+	device_name = UNIX_SOCKET_PATH;
+	while ( (o = getopt_long(argc, argv, optstr, options, &i)) != -1) {
+		switch (o) {
+		case 'c':
+			config_name = optarg;
+			break;
+		case 'd':
+			device_name = optarg;
+			break;
+		case 'h':
+			usage(argv[0]);
+			exit(EXIT_SUCCESS);
+		}
+	}
 
 	one_wire_bus_init(&bus);
 	ds1963s_dev_init(&ds1963s);
 	ds2480b_dev_init(&ds2480b);
+
+	if (config_name != NULL) {
+#ifdef HAVE_LIBYAML
+		ds1963s_emulator_yaml_load(&ds1963s, config_name);
+#else
+		fprintf(stderr, "%s has been built without libyaml support.\n"
+		                "libyaml is necessary for loading "
+		                "configurations.\n", argv[0] ?: PROGNAME);
+		exit(EXIT_FAILURE);
+#endif
+	}
 
 	if ( (serial = transport_factory_new(TRANSPORT_UNIX)) == NULL) {
 		perror("transport_factory_new()");
 		exit(EXIT_FAILURE);
 	}
 
-	if (transport_unix_connect(serial, UNIX_SOCKET_PATH) != 0) {
-		perror("transport_unix_connect(\"" UNIX_SOCKET_PATH "\")");
+	if (transport_unix_connect(serial, device_name) != 0) {
+		perror("transport_unix_connect()");
 		exit(EXIT_FAILURE);
 	}
 
