@@ -722,7 +722,7 @@ ds1963s_dev_memory_command_erase_scratchpad(struct ds1963s_device *dev)
 	dev->TA1  = DS1963S_RX_BYTE(dev);
 	dev->TA2  = DS1963S_RX_BYTE(dev);
 
-	memset(dev->scratchpad, 0, sizeof dev->scratchpad);
+	memset(dev->scratchpad, 0xFF, sizeof dev->scratchpad);
 	/* Simulate TX 1s until the command is finished.
 	 *
 	 * XXX: specs say this happens for 32us.  Investigate how many 1s
