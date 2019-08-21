@@ -2,11 +2,27 @@
  *
  * Parse a yaml configuration defining the ds1963s ibutton to emulate.
  *
- * Not a fan of libyaml in C for sure, this code is a horribly convoluted
- * state machine.  Either I've gotten the use wrong, or the design of libyaml
- * is bad.  Instead of saving time and work it wasted and created it, which is
- * the opposite of what a /good/ library is supposed to do.
+ * Dedicated to Yuzuyu Arielle Huizer.
  *
+ * Not a fan of libyaml in C, this code is a horribly convoluted state machine.
+ * Either I've gotten the use wrong, or the design of libyaml is bad.  Instead
+ * of saving time and work it wasted and created it, which is the opposite of
+ * what a good library is supposed to do.
+ *
+ * Copyright (C) 2016-2019  Ronald Huizer <rhuizer@hexpedition.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include <ctype.h>
 #include <yaml.h>
