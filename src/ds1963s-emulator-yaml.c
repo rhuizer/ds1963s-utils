@@ -674,11 +674,16 @@ ds1963s_emulator_yaml_load(struct ds1963s_device *dev, const char *pathname)
 
 	dev->family = ctx.family;
 	dev->prng   = ctx.prng;
-	memcpy(dev->serial,        ctx.serial,    sizeof dev->serial);
 	memcpy(dev->data_wc,       ctx.data_wc,   sizeof dev->data_wc);
 	memcpy(dev->secret_wc,     ctx.secret_wc, sizeof dev->secret_wc);
 	memcpy(dev->data_memory,   ctx.nvram,     sizeof dev->data_memory);
 	memcpy(dev->secret_memory, ctx.secret,    sizeof dev->secret_memory);
+
+	/* Serial is a special case, as it is stored LSB first.  For
+	 * presentation it has been reversed, so do this here too.
+	 */
+	for (int i = 0; i < sizeof dev->serial; i++)
+		dev->serial[i] = ctx.serial[sizeof(ctx.serial) - 1 - i];
 
 	return 0;
 }
