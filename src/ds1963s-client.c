@@ -671,21 +671,12 @@ int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
 }
 
 int
-ds1963s_client_secret_compute_first(struct ds1963s_client *ctx, int secret, int page)
+ds1963s_client_secret_compute_first(struct ds1963s_client *ctx, int page)
 {
 	SHACopr *copr = &ctx->copr;
 	int address, ret;
 
-	if (secret < 0 || secret > 7) {
-		ctx->errno = DS1963S_ERROR_SECRET_NUM;
-		return -1;
-	}
-
 	if ( (address = ds1963s_client_page_to_address(ctx, page)) == -1)
-		return -1;
-
-	/* XXX: for now we only support this with an erased scratchpad. */
-	if (ds1963s_client_scratchpad_erase(ctx) == -1)
 		return -1;
 
 	/* Generate the secret using the SHA 0x0F command. */
@@ -695,17 +686,34 @@ ds1963s_client_secret_compute_first(struct ds1963s_client *ctx, int secret, int 
 		return -1;
 	}
 
-	/* Generated secret is on scratchpad, copy it to the secret. */
-	ret = CopySecretSHA18(copr->portnum, secret);
+	return 0;
+}
+
+int
+ds1963s_client_secret_compute_next(struct ds1963s_client *ctx, int page)
+{
+	SHACopr *copr = &ctx->copr;
+	int address, ret;
+
+	if ( (address = ds1963s_client_page_to_address(ctx, page)) == -1)
+		return -1;
+
+	/* Generate the secret using the SHA 0xF0 command. */
+	ret = SHAFunction18(copr->portnum, SHA_COMPUTE_NEXT_SECRET, address, TRUE);
 	if (ret == FALSE) {
-		ctx->errno = DS1963S_ERROR_COPY_SECRET;
+		ctx->errno = DS1963S_ERROR_SHA_FUNCTION;
 		return -1;
 	}
 
 	return 0;
 }
 
-void ds1963s_client_perror(struct ds1963s_client *ctx, const char *s)
+void
+ds1963s_client_perror(struct ds1963s_client *ctx, const char *fmt, ...)
 {
-	ds1963s_perror(ctx->errno, s);
+	va_list ap;
+
+	va_start(ap, fmt);
+	ds1963s_vperror(ctx->errno, fmt, ap);
+	va_end(ap);
 }

@@ -110,15 +110,15 @@ int ds1963s_client_memory_write(struct ds1963s_client *ctx, uint16_t address,
                                 const uint8_t *data, size_t size);
 uint32_t ds1963s_client_prng_get(struct ds1963s_client *ctx);
 
-void ds1963s_client_perror(struct ds1963s_client *ctx, const char *s);
+void ds1963s_client_perror(struct ds1963s_client *ctx, const char *s, ...);
 uint32_t ibutton_write_cycle_get(int portnum, int write_cycle_type);
 int ds1963s_write_cycle_get_all(struct ds1963s_client*, uint32_t [16]);
 int ds1963s_client_hide_set(struct ds1963s_client *ctx);
 
 int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
                                 const void *data, size_t len);
-int ds1963s_client_secret_compute_first(struct ds1963s_client *ctx,
-                                        int secret, int page);
+int ds1963s_client_secret_compute_first(struct ds1963s_client *ctx, int page);
+int ds1963s_client_secret_compute_next(struct ds1963s_client *ctx, int page);
 
 #ifdef __cplusplus
 };

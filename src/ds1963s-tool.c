@@ -42,7 +42,7 @@
 #define MODE_SIGN			16
 #define MODE_WRITE_SECRET		32
 #define MODE_INFO_FULL			64
-#define MODE_COMPUTE_FIRST_SECRET	128
+#define MODE_SECRET_FIRST_SET		128
 
 #define FORMAT_TEXT			1
 #define FORMAT_YAML			2
@@ -423,13 +423,51 @@ void ds1963s_tool_secret_write(struct ds1963s_tool *tool, int secret,
 }
 
 void
-ds1963s_tool_secret_compute_first(struct ds1963s_tool *tool, int secret, int page)
+ds1963s_tool_secret_first_set(struct ds1963s_tool *tool, int secret, int page)
+{
+	struct ds1963s_client *ctx = &tool->client;
+	SHACopr *copr = &ctx->copr;
+	int ret;
+
+	if (secret < 0 || secret > 7) {
+		ctx->errno = DS1963S_ERROR_SECRET_NUM;
+		ds1963s_client_perror(ctx, "%s()", __FUNCTION__);
+		ds1963s_tool_fatal(tool);
+	}
+
+	/* We check if the page is valid before erasing the scratchpad. */
+	if (ds1963s_client_page_to_address(ctx, page) == -1) {
+		ds1963s_client_perror(ctx, "%s()", __FUNCTION__);
+		ds1963s_tool_fatal(tool);
+	}
+
+	/* XXX: for now we only support this with an erased scratchpad. */
+	if (ds1963s_client_scratchpad_erase(ctx) == -1) {
+		ds1963s_client_perror(ctx, "%s()", __FUNCTION__);
+		ds1963s_tool_fatal(tool);
+	}
+
+	if (ds1963s_client_secret_compute_first(ctx, page) == -1) {
+		ds1963s_client_perror(ctx, "%s()", __FUNCTION__);
+		ds1963s_tool_fatal(tool);
+	}
+
+	/* Generated secret is on scratchpad, copy it to the secret. */
+	ret = CopySecretSHA18(copr->portnum, secret);
+	if (ret == FALSE) {
+		ctx->errno = DS1963S_ERROR_COPY_SECRET;
+		ds1963s_client_perror(ctx, "%s()", __FUNCTION__);
+		ds1963s_tool_fatal(tool);
+	}
+}
+
+void
+ds1963s_tool_secret_next_set(struct ds1963s_tool *tool, int secret, int page)
 {
 	struct ds1963s_client *ctx = &tool->client;
 
-	if (ds1963s_client_secret_compute_first(ctx, secret, page) == -1) {
-		ds1963s_client_perror(ctx,
-			"ds1963s_client_secret_compute_first()");
+	if (ds1963s_client_secret_compute_next(ctx, page) == -1) {
+		ds1963s_client_perror(ctx, "%s()", __FUNCTION__);
 		ds1963s_tool_fatal(tool);
 	}
 }
@@ -549,14 +587,14 @@ void usage(const char *progname)
 	                "authenticated data.\n");
 	fprintf(stderr, "   -s --sign-data=size      sign 'size' bytes of data.\n");
 	fprintf(stderr, "   -w --write               write data.\n");
-	fprintf(stderr, "   --compute-first-secret=n compute first secret and write it to secret 'n'.\n");
+	fprintf(stderr, "   --secret-set-first=n     compute first secret and write it to secret 'n'.\n");
 	fprintf(stderr, "   --write-secret=n         write data to secret 'n'.\n");
 }
 
 static const struct option options[] =
 {
 	{ "address",		  1,	NULL,	'a' },
-	{ "compute-first-secret", 1,    NULL,    0  },
+	{ "secret-set-first",     1,    NULL,    0  },
 	{ "device",		  1,	NULL,	'd' },
 	{ "help",		  0,	NULL,	'h' },
 	{ "page",		  1,	NULL,	'p' },
@@ -594,8 +632,8 @@ int main(int argc, char **argv)
 				mode = MODE_WRITE_SECRET;
 				secret = atoi(optarg);
 				break;
-			} else if (!strcmp(options[i].name, "compute-first-secret")) {
-				mode = MODE_COMPUTE_FIRST_SECRET;
+			} else if (!strcmp(options[i].name, "secret-set-first")) {
+				mode = MODE_SECRET_FIRST_SET;
 				secret = atoi(optarg);
 				break;
 			}
@@ -654,9 +692,9 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	mask = MODE_COMPUTE_FIRST_SECRET;
+	mask = MODE_SECRET_FIRST_SET;
 	if ( (mode & mask) != 0 && page == -1) {
-		fprintf(stderr, "--compute-first-secret expects a -p/--page argument.\n");
+		fprintf(stderr, "--secret-set-first expects a -p/--page argument.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -710,8 +748,8 @@ int main(int argc, char **argv)
 	case MODE_WRITE_SECRET:
 		ds1963s_tool_secret_write(&tool, secret, data, len);
 		break;
-	case MODE_COMPUTE_FIRST_SECRET:
-		ds1963s_tool_secret_compute_first(&tool, secret, page);
+	case MODE_SECRET_FIRST_SET:
+		ds1963s_tool_secret_first_set(&tool, secret, page);
 		break;
 	}
 

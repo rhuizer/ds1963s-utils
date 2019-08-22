@@ -1,6 +1,8 @@
 #ifndef __DS1963S_ERROR_H
 #define __DS1963S_ERROR_H
 
+#include <stdarg.h>
+
 #define DS1963S_ERROR_SUCCESS		0
 #define DS1963S_ERROR_OPENCOM		1
 #define DS1963S_ERROR_NO_DS2480		2
@@ -26,7 +28,8 @@
 extern "C" {
 #endif
 
-void ds1963s_perror(int errno, const char *s);
+void ds1963s_perror(int errno, const char *fmt, ...);
+void ds1963s_vperror(int errno, const char *fmt, va_list ap);
 
 #ifdef __cplusplus
 };

@@ -24,15 +24,40 @@ static char *__errors[] = {
 	"Copy secret failed",
 };
 
-void ds1963s_perror(int errno, const char *s)
-{
-	size_t errnum = sizeof(__errors) / sizeof(char *);
+static size_t errnum = sizeof(__errors) / sizeof(char *);
 
-	if (s && *s)
-		fprintf(stderr, "%s: ", s);
+void
+ds1963s_perror(int errno, const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	ds1963s_vperror(errno, fmt, ap);
+	va_end(ap);
+}
+
+void
+ds1963s_vperror(int errno, const char *fmt, va_list ap)
+{
+	char buf[1024];
+	char *msg;
+
+	if (fmt && vasprintf(&msg, fmt, ap) == -1) {
+		if (vsnprintf(buf, sizeof buf, fmt, ap) < 0)
+			return;
+
+		msg = buf;
+	}
+
+	if (fmt)
+		fprintf(stderr, "%s: ", msg);
 
 	if (errno < 0 || errno >= errnum)
 		fprintf(stderr, "Unknown error number.\n");
 	else
 		fprintf(stderr, "%s.\n", __errors[errno]);
+
+
+	if (fmt && msg != buf)
+		free(msg);
 }
