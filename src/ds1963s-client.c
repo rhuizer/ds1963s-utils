@@ -111,7 +111,8 @@ static inline int __ds1963s_client_select_sha(struct ds1963s_client *ctx)
 	return 0;
 }
 
-int ds1963s_client_page_to_address(struct ds1963s_client *ctx, int page)
+int
+ds1963s_client_page_to_address(struct ds1963s_client *ctx, int page)
 {
 	if (page < 0 || page > 21) {
 		ctx->errno = DS1963S_ERROR_INVALID_PAGE;
@@ -662,6 +663,37 @@ int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
 	/* Copy scratchpad data to the secret. */
 	if (CopyScratchpadSHA18(copr->portnum, secret_addr, len, 0) == FALSE) {
 		ctx->errno = DS1963S_ERROR_SP_COPY;
+		return -1;
+	}
+
+	return 0;
+}
+
+int
+ds1963s_client_secret_compute_first(struct ds1963s_client *ctx, int secret, int page)
+{
+	SHACopr *copr = &ctx->copr;
+	int address, ret;
+
+	if (secret < 0 || secret > 7) {
+		ctx->errno = DS1963S_ERROR_SECRET_NUM;
+		return -1;
+	}
+
+	if ( (address = ds1963s_client_page_to_address(ctx, page)) == -1)
+		return -1;
+
+	/* Generate the secret using the SHA 0x0F command. */
+	ret = SHAFunction18(copr->portnum, SHA_COMPUTE_FIRST_SECRET, address, TRUE);
+	if (ret == FALSE) {
+		ctx->errno = DS1963S_ERROR_SHA_FUNCTION;
+		return -1;
+	}
+
+	/* Generated secret is on scratchpad, copy it to the secret. */
+	ret = CopySecretSHA18(copr->portnum, secret);
+	if (ret == FALSE) {
+		ctx->errno = DS1963S_ERROR_COPY_SECRET;
 		return -1;
 	}
 

@@ -18,7 +18,10 @@ static char *__errors[] = {
 	"Failed to read scratchpad",
 	"Data integrity error",
 	"Failed to copy scratchpad",
-	"Invalid page number.  Valid numbers are 0..21"
+	"Invalid page number.  Valid numbers are 0..21",
+	"SHA function failed",
+	"Copy Scratchpad failed",
+	"Copy secret failed",
 };
 
 void ds1963s_perror(int errno, const char *s)

@@ -18,6 +18,9 @@
 #define DS1963S_ERROR_INTEGRITY		14	/* Data integrity error.    */
 #define DS1963S_ERROR_SP_COPY		15	/* Failed to copy scratch.  */
 #define DS1963S_ERROR_INVALID_PAGE	16	/* Invalid page number.     */
+#define DS1963S_ERROR_SHA_FUNCTION	17	/* SHA function failed.     */
+#define DS1963S_ERROR_COPY_SCRATCHPAD	18	/* Copy Scratchpad failed.  */
+#define DS1963S_ERROR_COPY_SECRET	19	/* Copy secret failed.      */
 
 #ifdef __cplusplus
 extern "C" {

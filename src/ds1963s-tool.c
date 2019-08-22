@@ -34,17 +34,18 @@
 #include "ds1963s-tool-yaml.h"
 #endif
 
-#define DEFAULT_SERIAL_PORT	"/dev/ttyUSB0"
-#define MODE_INFO		1
-#define MODE_READ		2
-#define MODE_READ_AUTH		4
-#define MODE_WRITE		8
-#define MODE_SIGN		16
-#define MODE_WRITE_SECRET	32
-#define MODE_INFO_FULL		64
+#define DEFAULT_SERIAL_PORT		"/dev/ttyUSB0"
+#define MODE_INFO			1
+#define MODE_READ			2
+#define MODE_READ_AUTH			4
+#define MODE_WRITE			8
+#define MODE_SIGN			16
+#define MODE_WRITE_SECRET		32
+#define MODE_INFO_FULL			64
+#define MODE_COMPUTE_FIRST_SECRET	128
 
-#define FORMAT_TEXT		1
-#define FORMAT_YAML		2
+#define FORMAT_TEXT			1
+#define FORMAT_YAML			2
 
 int ds1963s_tool_init(struct ds1963s_tool *tool, const char *device)
 {
@@ -422,6 +423,18 @@ void ds1963s_tool_secret_write(struct ds1963s_tool *tool, int secret,
 }
 
 void
+ds1963s_tool_secret_compute_first(struct ds1963s_tool *tool, int secret, int page)
+{
+	struct ds1963s_client *ctx = &tool->client;
+
+	if (ds1963s_client_secret_compute_first(ctx, secret, page) == -1) {
+		ds1963s_client_perror(ctx,
+			"ds1963s_client_secret_compute_first()");
+		ds1963s_tool_fatal(tool);
+	}
+}
+
+void
 ds1963s_tool_read(struct ds1963s_tool *tool, uint16_t address, size_t size)
 {
 	struct ds1963s_client *ctx = &tool->client;
@@ -529,31 +542,32 @@ void usage(const char *progname)
 	fprintf(stderr, "   -d --device=pathname  the serial device used.\n");
 
 	fprintf(stderr, "\nFunction that will be performed.\n");
-	fprintf(stderr, "   -i --info             print ibutton information.\n");
-	fprintf(stderr, "   -f --info-full        print full ibutton information.\n");
-	fprintf(stderr, "   -r --read=size        read 'size' bytes of data.\n");
-	fprintf(stderr, "   -t --read-auth=size   read 'size' bytes of "
+	fprintf(stderr, "   -i --info                print ibutton information.\n");
+	fprintf(stderr, "   -f --info-full           print full ibutton information.\n");
+	fprintf(stderr, "   -r --read=size           read 'size' bytes of data.\n");
+	fprintf(stderr, "   -t --read-auth=size      read 'size' bytes of "
 	                "authenticated data.\n");
-	fprintf(stderr, "   -s --sign-data=size   sign 'size' bytes of data.\n");
-	fprintf(stderr, "   -w --write            write data.\n");
-	fprintf(stderr, "   --write-secret=num    write data to secret "
-	                "'num'.\n");
+	fprintf(stderr, "   -s --sign-data=size      sign 'size' bytes of data.\n");
+	fprintf(stderr, "   -w --write               write data.\n");
+	fprintf(stderr, "   --compute-first-secret=n compute first secret and write it to secret 'n'.\n");
+	fprintf(stderr, "   --write-secret=n         write data to secret 'n'.\n");
 }
 
 static const struct option options[] =
 {
-	{ "address",		1,	NULL,	'a' },
-	{ "device",		1,	NULL,	'd' },
-	{ "help",		0,	NULL,	'h' },
-	{ "page",		1,	NULL,	'p' },
-	{ "info",		0,	NULL,	'i' },
-	{ "info-full",		0,	NULL,	'f' },
-	{ "read",		1,	NULL,	'r' },
-	{ "read-auth",		1,	NULL,	't' },
-	{ "sign-data",		1,	NULL,	's' },
-	{ "write",		0,	NULL,	'w' },
-	{ "write-secret",	1,	NULL,	 0  },
-	{ NULL,			0,	NULL,	 0  }
+	{ "address",		  1,	NULL,	'a' },
+	{ "compute-first-secret", 1,    NULL,    0  },
+	{ "device",		  1,	NULL,	'd' },
+	{ "help",		  0,	NULL,	'h' },
+	{ "page",		  1,	NULL,	'p' },
+	{ "info",		  0,	NULL,	'i' },
+	{ "info-full",		  0,	NULL,	'f' },
+	{ "read",		  1,	NULL,	'r' },
+	{ "read-auth",		  1,	NULL,	't' },
+	{ "sign-data",		  1,	NULL,	's' },
+	{ "write",		  0,	NULL,	'w' },
+	{ "write-secret",	  1,	NULL,	 0  },
+	{ NULL,			  0,	NULL,	 0  }
 };
 
 const char optstr[] = "a:d:hr:p:s:ifwy";
@@ -578,6 +592,10 @@ int main(int argc, char **argv)
 		case 0:
 			if (!strcmp(options[i].name, "write-secret")) {
 				mode = MODE_WRITE_SECRET;
+				secret = atoi(optarg);
+				break;
+			} else if (!strcmp(options[i].name, "compute-first-secret")) {
+				mode = MODE_COMPUTE_FIRST_SECRET;
 				secret = atoi(optarg);
 				break;
 			}
@@ -636,6 +654,12 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
+	mask = MODE_COMPUTE_FIRST_SECRET;
+	if ( (mode & mask) != 0 && page == -1) {
+		fprintf(stderr, "--compute-first-secret expects a -p/--page argument.\n");
+		exit(EXIT_FAILURE);
+	}
+
 	/* Write functions take an extra argument. */
 	mask = MODE_WRITE | MODE_WRITE_SECRET;
 	if ( (mode & mask) != 0) {
@@ -685,6 +709,9 @@ int main(int argc, char **argv)
 		break;
 	case MODE_WRITE_SECRET:
 		ds1963s_tool_secret_write(&tool, secret, data, len);
+		break;
+	case MODE_COMPUTE_FIRST_SECRET:
+		ds1963s_tool_secret_compute_first(&tool, secret, page);
 		break;
 	}
 

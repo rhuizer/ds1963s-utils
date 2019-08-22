@@ -174,6 +174,27 @@ static void __sha1_get_output_1(uint8_t SP[32], uint32_t A, uint32_t B,
 	SP[27] = (A >> 24) & 0xFF;
 }
 
+/* Construct the SHA-1 output for operations:
+ *
+ * - Compute First Secret
+ * - Compute Next Secret
+ */
+static void
+__sha1_get_output_2(uint8_t SP[32], uint32_t D, uint32_t E)
+{
+	for (int i = 0; i < 32; i += 8) {
+		SP[i + 0] = (E >>  0) & 0xFF;
+		SP[i + 1] = (E >>  8) & 0xFF;
+		SP[i + 2] = (E >> 16) & 0xFF;
+		SP[i + 3] = (E >> 24) & 0xFF;
+
+		SP[i + 4] = (D >>  0) & 0xFF;
+		SP[i + 5] = (D >>  8) & 0xFF;
+		SP[i + 6] = (D >> 16) & 0xFF;
+		SP[i + 7] = (D >> 24) & 0xFF;
+	}
+}
+
 static inline void
 __ds1963s_dev_do_reset_pulse(struct ds1963s_device *dev)
 {
