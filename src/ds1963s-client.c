@@ -357,7 +357,8 @@ int ibutton_secret_zero(int portnum, int pagenum, int secretnum, int resume)
 
 #endif
 
-int ds1963s_client_scratchpad_erase(struct ds1963s_client *ctx)
+int
+ds1963s_client_scratchpad_erase(struct ds1963s_client *ctx)
 {
 	int portnum = ctx->copr.portnum;
 
@@ -681,6 +682,10 @@ ds1963s_client_secret_compute_first(struct ds1963s_client *ctx, int secret, int 
 	}
 
 	if ( (address = ds1963s_client_page_to_address(ctx, page)) == -1)
+		return -1;
+
+	/* XXX: for now we only support this with an erased scratchpad. */
+	if (ds1963s_client_scratchpad_erase(ctx) == -1)
 		return -1;
 
 	/* Generate the secret using the SHA 0x0F command. */

@@ -91,8 +91,9 @@ static uint8_t __mp_get(int M, int X, int page)
  * - Compute First Secret
  * - Compute Next Secret
  */
-static void __sha1_get_input_1(uint8_t M[64], uint8_t *SS, uint8_t *PP,
-                               uint8_t MPX, uint8_t *SP)
+static void
+__sha1_get_input_1(uint8_t M[64], uint8_t *SS, uint8_t *PP, uint8_t MPX,
+                   uint8_t *SP)
 {
 	memcpy(&M[ 0], &SS[ 0],  4);
 	memcpy(&M[ 4], &PP[ 0], 32);
@@ -340,7 +341,7 @@ ds1963s_dev_read_auth_page(struct ds1963s_device *ds1963s, int page)
 
 	/* Write the results to the scratchpad. */
 	__sha1_get_output_1(
-		ds1963s->scratchpad, 
+		ds1963s->scratchpad,
 		ctx.state[0] - 0x67452301,
 		ctx.state[1] - 0xEFCDAB89,
 		ctx.state[2] - 0x98BADCFE,
@@ -376,7 +377,7 @@ void ds1963s_dev_sign_data_page(struct ds1963s_device *ds1963s)
 
 	/* Write the results to the scratchpad. */
 	__sha1_get_output_1(
-		ds1963s->scratchpad, 
+		ds1963s->scratchpad,
 		ctx.state[0] - 0x67452301,
 		ctx.state[1] - 0xEFCDAB89,
 		ctx.state[2] - 0x98BADCFE,
@@ -507,7 +508,6 @@ ds1963s_dev_memory_command_write_scratchpad(struct ds1963s_device *dev)
 		if (dev->HIDE == 0)
 			dev->scratchpad[offset] = byte;
 
-		dev->ES = offset;
 		crc16 = ds1963s_crc16_update_byte(crc16, byte);
 	}
 
@@ -520,6 +520,59 @@ ds1963s_dev_memory_command_write_scratchpad(struct ds1963s_device *dev)
 
 done:
 	DS1963S_TX_END(dev);
+}
+
+int
+ds1963s_dev_sha_command_compute_first_secret(struct ds1963s_device *dev)
+{
+	uint8_t  SS[8] = { 0 };
+	uint8_t  M[64];
+	uint16_t addr;
+	int      page;
+	SHA1_CTX ctx;
+
+	dev->ES   |= 0x1F;	/* E4:E0 := 1,1,1,1,1 */
+	dev->M     = 0;
+	dev->X     = 0;
+	dev->HIDE  = 1;
+	dev->CHLG  = 0;
+	dev->AUTH  = 0;
+	dev->MATCH = 0;
+
+	/* XXX: unclear of the ds1963s page aligns all this or just uses
+	 * the address.  Test later.
+	 */
+	addr = ds1963s_ta_to_address(dev->TA1, dev->TA2);
+	page = ds1963s_address_to_page(addr);
+
+	__sha1_get_input_1(
+		M,
+		SS,
+		&dev->data_memory[(page % 16) * 32],
+		__mpx_get(dev->M, dev->X, dev->scratchpad),
+		dev->scratchpad
+	);
+
+	/* We omit the finalize, as the DS1963S does not use it, but rather
+	 * uses the internal state A, B, C, D, E for the result.  This also
+	 * means we have to subtract the initial state from the context, as
+	 * it has added these to the results.
+	 */
+	SHA1_Init(&ctx);
+	SHA1_Update(&ctx, M, sizeof M);
+
+	/* Write the results to the scratchpad. */
+	__sha1_get_output_2(
+		dev->scratchpad,
+		ctx.state[3] - 0x10325476,
+		ctx.state[4] - 0xC3D2E1F0
+	);
+
+	/* XXX: Investigate how many 1s to send later. */
+	for (int i = 0; i < 10; i++)
+		DS1963S_TX_BIT(dev, 1);
+
+	DS1963S_TX_SUCCESS(dev);
 }
 
 int
@@ -560,6 +613,7 @@ ds1963s_dev_memory_command_compute_sha(struct ds1963s_device *dev)
 	ctrl     = DS1963S_RX_BYTE(dev);
 
 	crc16    = 0;
+	crc16    = ds1963s_crc16_update_byte(crc16, 0x33);
 	crc16    = ds1963s_crc16_update_byte(crc16, dev->TA1);
 	crc16    = ds1963s_crc16_update_byte(crc16, dev->TA2);
 	crc16    = ds1963s_crc16_update_byte(crc16, ctrl);
@@ -570,7 +624,7 @@ ds1963s_dev_memory_command_compute_sha(struct ds1963s_device *dev)
 	switch (ctrl) {
 	case 0x0F:
 		DEBUG_LOG("[ds1963s|SHA] Compute 1st Secret\n");
-//		ds1963s_dev_sha_command_compute_1st_secret(dev);
+		ds1963s_dev_sha_command_compute_first_secret(dev);
 		break;
 	case 0xF0:
 		DEBUG_LOG("[ds1963s|SHA] Compute next Secret\n");
