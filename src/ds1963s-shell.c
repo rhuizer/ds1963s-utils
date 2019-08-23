@@ -67,6 +67,35 @@ __cmd_is_read_auth_page(const char *cmd)
 }
 
 static int
+__cmd_is_compute_first_secret(const char *cmd)
+{
+	if (cmd[0] != 'c') return 0;
+	if (!strcmp(cmd, "compute-first-secret")) return 1;
+	if (!strcmp(cmd, "cfs")) return 1;
+	return 0;
+}
+
+static int
+__cmd_is_compute_next_secret(const char *cmd)
+{
+	if (cmd[0] != 'c') return 0;
+	if (!strcmp(cmd, "compute-next-secret")) return 1;
+	if (!strcmp(cmd, "cns")) return 1;
+	return 0;
+}
+
+static int
+__cmd_is_sign_data_page(const char *cmd)
+{
+	if (cmd[0] != 's') return 0;
+	if (!strcmp(cmd, "sign-data-page")) return 1;
+	if (!strcmp(cmd, "sign")) return 1;
+	if (!strcmp(cmd, "sdp")) return 1;
+	return 0;
+}
+
+
+static int
 parse_uint(const char *s, unsigned int *p)
 {
 	unsigned int i;
@@ -302,6 +331,48 @@ handle_memory_read(void)
 }
 
 void
+handle_compute_first_secret(void)
+{
+	int address;
+
+	if (address_get("compute-first-secret", &address) == -1)
+		return;
+
+	if (ds1963s_client_secret_compute_first(&client, address) == -1) {
+		ds1963s_client_perror(&client, NULL);
+		return;
+	}
+}
+
+void
+handle_compute_next_secret(void)
+{
+	int address;
+
+	if (address_get("compute-next-secret", &address) == -1)
+		return;
+
+	if (ds1963s_client_secret_compute_next(&client, address) == -1) {
+		ds1963s_client_perror(&client, NULL);
+		return;
+	}
+}
+
+void
+handle_sign_data_page(void)
+{
+	int address;
+
+	if (address_get("sign-data-page", &address) == -1)
+		return;
+
+	if (ds1963s_client_sign_data_page(&client, address) == -1) {
+		ds1963s_client_perror(&client, NULL);
+		return;
+	}
+}
+
+void
 handle_read_auth_page(void)
 {
 	ds1963s_client_read_auth_page_reply_t reply;
@@ -395,6 +466,12 @@ handle_ds1963s_command(char *line)
 		handle_scratchpad_command(NULL);
 	} else if (__cmd_is_memory(cmd)) {
 		handle_memory_command(NULL);
+	} else if (__cmd_is_compute_first_secret(cmd)) {
+		handle_compute_first_secret();
+	} else if (__cmd_is_compute_next_secret(cmd)) {
+		handle_compute_next_secret();
+	} else if (__cmd_is_sign_data_page(cmd)) {
+		handle_sign_data_page();
 	}
 }
 

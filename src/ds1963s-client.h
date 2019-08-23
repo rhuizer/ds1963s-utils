@@ -100,8 +100,7 @@ int ds1963s_client_sp_read(ds1963s_client_t *, ds1963s_client_sp_read_reply_t *)
 int ds1963s_client_sp_write(ds1963s_client_t *, uint16_t address, const uint8_t *data, size_t len);
 
 int ds1963s_client_read_auth(ds1963s_client_t *, int, ds1963s_client_read_auth_page_reply_t *);
-
-int ds1963s_client_sign_data(struct ds1963s_client *ctx, int address, unsigned char hash[20]);
+int ds1963s_client_sign_data_page(ds1963s_client_t *ctx, int address);
 
 int ds1963s_client_rom_get(struct ds1963s_client *ctx, struct ds1963s_rom *rom);
 int ds1963s_client_serial_get(struct ds1963s_client *ctx, uint8_t buf[6]);
@@ -122,7 +121,7 @@ int ds1963s_client_hide_set(struct ds1963s_client *ctx);
 
 int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
                                 const void *data, size_t len);
-int ds1963s_client_secret_compute_first(struct ds1963s_client *ctx, int page);
+int ds1963s_client_secret_compute_first(struct ds1963s_client *ctx, int address);
 int ds1963s_client_secret_compute_next(struct ds1963s_client *ctx, int page);
 int ds1963s_client_validate_data_page(struct ds1963s_client *ctx, int page);
 

@@ -607,15 +607,15 @@ ds1963s_tool_sign(struct ds1963s_tool *tool, int page, size_t size)
 		ds1963s_tool_fatal(tool);
 	}
 
-	if (ds1963s_client_sign_data(ctx, addr, hash) == -1) {
-		ds1963s_client_perror(ctx, "ds1963s_client_sign_data()");
+	if (ds1963s_client_sign_data_page(ctx, addr) == -1) {
+		ds1963s_client_perror(ctx, "ds1963s_client_sign_data_page()");
 		ds1963s_tool_fatal(tool);
 	}
 
 	printf("Sign data page #%.2d\n", page);
 	printf("---------------------------\n");
-	printf("SHA1 hash: ");
-	ds1963s_client_hash_print(hash);
+	printf("SHA1 hash: TODO");
+//	ds1963s_client_hash_print(hash);
 }
 
 void usage(const char *progname)

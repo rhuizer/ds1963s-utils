@@ -289,12 +289,6 @@ ds1963s_client_read_auth(ds1963s_client_t *ctx, int address,
              ((buf[i - 1] & 0xF0) == 0xA0),
              OWERROR_NO_COMPLETION_BYTE, -1);
 
-#if 0
-	/* Read the SHA1 result from the scratchpad. */
-	OWASSERT(ReadScratchpadSHA18(portnum, 0, 0, scratchpad, TRUE),
-	         OWERROR_READ_SCRATCHPAD_FAILED, -1);
-#endif
-
 	memcpy(reply->data, &buf[i - 10 - read_size - num_verf], read_size);
 	reply->data_size = read_size;
 	reply->data_wc   = GET_32BIT_LSB(&buf[i - 10 - num_verf]);
@@ -305,20 +299,17 @@ ds1963s_client_read_auth(ds1963s_client_t *ctx, int address,
 	return 0;
 }
 
-int ds1963s_client_sign_data(
-	struct ds1963s_client *ctx,
-	int address,
-	unsigned char hash[20])
+int
+ds1963s_client_sign_data_page(ds1963s_client_t *ctx, int address)
 {
-	int portnum = ctx->copr.portnum;
-	uint8_t scratchpad[32];
-	int i;
+	int portnum;
 
-	SHAFunction18(portnum, 0xC3, address, 0);
-	ReadScratchpadSHA18(portnum, 0, 0, scratchpad, 0);
+	assert(ctx != NULL);
+	assert(address >= 0 && address <= 0xFFFF);
 
-	for (i = 0; i < 20; i++)
-		hash[i] = scratchpad[i + 8];
+       	portnum = ctx->copr.portnum;
+	if (SHAFunction18(portnum, 0xC3, address, 0) == -1)
+		return -1;
 
 	return 0;
 }
@@ -334,33 +325,6 @@ int ds1963s_client_serial_get(struct ds1963s_client *ctx, uint8_t serial[6])
 
 	return 0;
 }
-
-#if 0
-int ibutton_secret_zero(int portnum, int pagenum, int secretnum, int resume)
-{
-	char secret_scratchpad[32];
-	int addr = pagenum << 5;
-	char secret_data[32];
-
-	memset(secret_scratchpad, 0, 32);
-	memset(secret_data, 0, 32);
-
-	if (WriteDataPageSHA18(portnum, pagenum, secret_data, resume) == FALSE)
-		return -1;
-
-	if (WriteScratchpadSHA18(portnum, addr, secret_scratchpad, 32, TRUE) == FALSE)
-		return -1;
-
-	if (SHAFunction18(portnum, (uchar)SHA_COMPUTE_FIRST_SECRET, addr, TRUE) == FALSE)
-		return -1;
-
-	if (CopySecretSHA18(portnum, secretnum) == FALSE)
-		return -1;
-
-	return 0;
-}
-
-#endif
 
 int
 ds1963s_client_sp_copy(struct ds1963s_client *ctx, int address, uint8_t es)
@@ -724,14 +688,15 @@ int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
 }
 
 int
-ds1963s_client_secret_compute_first(struct ds1963s_client *ctx, int page)
+ds1963s_client_secret_compute_first(ds1963s_client_t *ctx, int address)
 {
-	SHACopr *copr = &ctx->copr;
-	int address, ret;
+	SHACopr *copr;
+	int ret;
 
-	if ( (address = ds1963s_client_page_to_address(ctx, page)) == -1)
-		return -1;
+	assert(ctx != NULL);
+	assert(address >= 0 && address <= 0xFFFF);
 
+	copr = &ctx->copr;
 	/* Generate the secret using the SHA 0x0F command. */
 	ret = SHAFunction18(copr->portnum, SHA_COMPUTE_FIRST_SECRET, address, TRUE);
 	if (ret == FALSE) {
@@ -743,14 +708,15 @@ ds1963s_client_secret_compute_first(struct ds1963s_client *ctx, int page)
 }
 
 int
-ds1963s_client_secret_compute_next(struct ds1963s_client *ctx, int page)
+ds1963s_client_secret_compute_next(struct ds1963s_client *ctx, int address)
 {
-	SHACopr *copr = &ctx->copr;
-	int address, ret;
+	SHACopr *copr;
+	int ret;
 
-	if ( (address = ds1963s_client_page_to_address(ctx, page)) == -1)
-		return -1;
+	assert(ctx != NULL);
+	assert(address >= 0 && address <= 0xFFFF);
 
+	copr = &ctx->copr;
 	/* Generate the secret using the SHA 0xF0 command. */
 	ret = SHAFunction18(copr->portnum, SHA_COMPUTE_NEXT_SECRET, address, TRUE);
 	if (ret == FALSE) {
