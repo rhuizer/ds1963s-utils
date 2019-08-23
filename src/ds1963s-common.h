@@ -22,6 +22,7 @@
 #ifndef __DS1963S_COMMON_H
 #define __DS1963S_COMMON_H
 
+#include <stdio.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -39,6 +40,8 @@ int      ds1963s_address_to_page(int address);
 int      ds1963s_address_secret(int address);
 
 int      hex_decode(uint8_t *dst, const char *src, size_t n);
+void     hexdump(uint8_t *s, size_t n);
+void     fhexdump(FILE *fp, uint8_t *s, size_t n);
 
 #ifdef __cplusplus
 };

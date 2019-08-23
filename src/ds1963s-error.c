@@ -1,4 +1,6 @@
+#define _GNU_SOURCE
 #include <stdio.h>
+#include <stdlib.h>
 #include "ds1963s-error.h"
 
 static char *__errors[] = {

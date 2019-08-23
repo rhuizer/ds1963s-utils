@@ -19,9 +19,11 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+#include <assert.h>
 #include <stddef.h>
 #include <string.h>
 #include <ctype.h>
+#include <inttypes.h>
 #include "ds1963s-common.h"
 
 static uint8_t ds1963s_crc8_table[] = {
@@ -150,4 +152,33 @@ hex_decode(uint8_t *dst, const char *src, size_t n)
 		dst[j] = __dehex_char(src[i]) * 16 + __dehex_char(src[i + 1]);
 
 	return 0;
+}
+
+void
+fhexdump(FILE *fp, uint8_t *p, size_t n)
+{
+	uint64_t offset = 0;
+
+	assert(fp != NULL);
+	assert(p != NULL);
+
+	if (n == 0)
+		return;
+
+	while (n != 0) {
+		fprintf(fp, "%.8" PRIx64 ":", offset);
+		for (int i = 0; i < 16 && n != 0; i++, offset++, n--) {
+			if (i % 2 == 0)
+				fprintf(fp, " ");
+
+			fprintf(fp, "%.2x", *p++);
+		}
+		fprintf(fp, "\n");
+	}
+}
+
+void
+hexdump(uint8_t *p, size_t n)
+{
+	fhexdump(stdout, p, n);
 }

@@ -311,6 +311,77 @@ void ds1963s_dev_write_scratchpad(
 	}
 }
 
+static void
+__ds1963s_dev_compute_secret(struct ds1963s_device *dev, uint8_t secret[8])
+{
+	uint8_t  M[64];
+	uint16_t addr;
+	int      page;
+	uint8_t  *SS;
+	SHA1_CTX ctx;
+
+	assert(dev != NULL);
+
+	SS         = secret;
+	dev->ES   |= 0x1F;	/* E4:E0 := 1,1,1,1,1 */
+	dev->M     = 0;
+	dev->X     = 0;
+	dev->HIDE  = 1;
+	dev->CHLG  = 0;
+	dev->AUTH  = 0;
+	dev->MATCH = 0;
+
+	/* XXX: unclear of the ds1963s page aligns all this or just uses
+	 * the address.  Test later.
+	 */
+	addr = ds1963s_ta_to_address(dev->TA1, dev->TA2);
+	page = ds1963s_address_to_page(addr);
+
+	__sha1_get_input_1(
+		M,
+		SS,
+		&dev->data_memory[(page % 16) * 32],
+		__mpx_get(dev->M, dev->X, dev->scratchpad),
+		dev->scratchpad
+	);
+
+	/* We omit the finalize, as the DS1963S does not use it, but rather
+	 * uses the internal state A, B, C, D, E for the result.  This also
+	 * means we have to subtract the initial state from the context, as
+	 * it has added these to the results.
+	 */
+	SHA1_Init(&ctx);
+	SHA1_Update(&ctx, M, sizeof M);
+
+	/* Write the results to the scratchpad. */
+	__sha1_get_output_2(
+		dev->scratchpad,
+		ctx.state[3] - 0x10325476,
+		ctx.state[4] - 0xC3D2E1F0
+	);
+}
+
+void
+ds1963s_dev_compute_first_secret(struct ds1963s_device *dev)
+{
+	uint8_t secret[8] = { 0 };
+	__ds1963s_dev_compute_secret(dev, secret);
+}
+
+void
+ds1963s_dev_compute_next_secret(struct ds1963s_device *dev)
+{
+	int addr, page;
+
+	/* Check the page this address belongs to. */
+	addr = ds1963s_ta_to_address(dev->TA1, dev->TA2);
+	page = ds1963s_address_to_page(addr);
+
+	DEBUG_LOG("NEXT SEC PAGE: %d\n", page);
+
+	__ds1963s_dev_compute_secret(dev, &dev->secret_memory[(page % 8) * 8]);
+}
+
 void
 ds1963s_dev_read_auth_page(struct ds1963s_device *ds1963s, int page)
 {
@@ -525,48 +596,20 @@ done:
 int
 ds1963s_dev_sha_command_compute_first_secret(struct ds1963s_device *dev)
 {
-	uint8_t  SS[8] = { 0 };
-	uint8_t  M[64];
-	uint16_t addr;
-	int      page;
-	SHA1_CTX ctx;
+	ds1963s_dev_compute_first_secret(dev);
 
-	dev->ES   |= 0x1F;	/* E4:E0 := 1,1,1,1,1 */
-	dev->M     = 0;
-	dev->X     = 0;
-	dev->HIDE  = 1;
-	dev->CHLG  = 0;
-	dev->AUTH  = 0;
-	dev->MATCH = 0;
+	/* XXX: Investigate how many 1s to send later. */
+	for (int i = 0; i < 10; i++)
+		DS1963S_TX_BIT(dev, 1);
 
-	/* XXX: unclear of the ds1963s page aligns all this or just uses
-	 * the address.  Test later.
-	 */
-	addr = ds1963s_ta_to_address(dev->TA1, dev->TA2);
-	page = ds1963s_address_to_page(addr);
+	DS1963S_TX_SUCCESS(dev);
+}
 
-	__sha1_get_input_1(
-		M,
-		SS,
-		&dev->data_memory[(page % 16) * 32],
-		__mpx_get(dev->M, dev->X, dev->scratchpad),
-		dev->scratchpad
-	);
 
-	/* We omit the finalize, as the DS1963S does not use it, but rather
-	 * uses the internal state A, B, C, D, E for the result.  This also
-	 * means we have to subtract the initial state from the context, as
-	 * it has added these to the results.
-	 */
-	SHA1_Init(&ctx);
-	SHA1_Update(&ctx, M, sizeof M);
-
-	/* Write the results to the scratchpad. */
-	__sha1_get_output_2(
-		dev->scratchpad,
-		ctx.state[3] - 0x10325476,
-		ctx.state[4] - 0xC3D2E1F0
-	);
+int
+ds1963s_dev_sha_command_compute_next_secret(struct ds1963s_device *dev)
+{
+	ds1963s_dev_compute_next_secret(dev);
 
 	/* XXX: Investigate how many 1s to send later. */
 	for (int i = 0; i < 10; i++)
@@ -628,7 +671,7 @@ ds1963s_dev_memory_command_compute_sha(struct ds1963s_device *dev)
 		break;
 	case 0xF0:
 		DEBUG_LOG("[ds1963s|SHA] Compute next Secret\n");
-//		ds1963s_dev_sha_command_compute_next_secret(dev);
+		ds1963s_dev_sha_command_compute_next_secret(dev);
 		break;
 	case 0x3C:
 		DEBUG_LOG("[ds1963s|SHA] Validate Data Page\n");
@@ -678,7 +721,10 @@ ds1963s_dev_memory_command_copy_scratchpad(struct ds1963s_device *dev)
 		goto error;
 
 	dev->AA = 1;
-	memcpy(&dev->memory[addr], &dev->scratchpad, (ES & 0x1F) + 1);
+	memcpy(&dev->memory[addr], dev->scratchpad, (ES & 0x1F) + 1);
+
+//	hexdump(dev->scratchpad, sizeof dev->scratchpad);
+	hexdump(dev->secret_memory, sizeof dev->secret_memory);
 
 	/* XXX: specs say this happens for 32us.  Investigate how many 1s
 	 * to send later.
