@@ -726,8 +726,7 @@ ds1963s_dev_memory_command_copy_scratchpad(struct ds1963s_device *dev)
 	dev->AA = 1;
 	memcpy(&dev->memory[addr], dev->scratchpad, (ES & 0x1F) + 1);
 
-//	hexdump(dev->scratchpad, sizeof dev->scratchpad);
-	hexdump(dev->secret_memory, sizeof dev->secret_memory);
+	hexdump(dev->secret_memory, sizeof dev->secret_memory, 0);
 
 	/* XXX: specs say this happens for 32us.  Investigate how many 1s
 	 * to send later.

@@ -109,7 +109,7 @@ ds1963s_address_to_ta(uint16_t address, uint8_t *TA1, uint8_t *TA2)
 int
 ds1963s_address_to_page(int address)
 {
-        if (address < 0 || address > 0x2c0)
+        if (address < 0 || address >= 0x400)
                 return -1;
 
         return address / 32;
@@ -135,7 +135,7 @@ __dehex_char(char c)
 	return -1;
 }
 
-int
+ssize_t
 hex_decode(uint8_t *dst, const char *src, size_t n)
 {
 	size_t src_len = strlen(src);
@@ -151,14 +151,12 @@ hex_decode(uint8_t *dst, const char *src, size_t n)
 	for (i = j = 0; i < src_len - 1 && j < n; i += 2, j++)
 		dst[j] = __dehex_char(src[i]) * 16 + __dehex_char(src[i + 1]);
 
-	return 0;
+	return j;
 }
 
 void
-fhexdump(FILE *fp, uint8_t *p, size_t n)
+fhexdump(FILE *fp, uint8_t *p, size_t n, uint64_t offset)
 {
-	uint64_t offset = 0;
-
 	assert(fp != NULL);
 	assert(p != NULL);
 
@@ -166,19 +164,33 @@ fhexdump(FILE *fp, uint8_t *p, size_t n)
 		return;
 
 	while (n != 0) {
+		char buf[17] = { 0 };
+		int  i;
+
 		fprintf(fp, "%.8" PRIx64 ":", offset);
-		for (int i = 0; i < 16 && n != 0; i++, offset++, n--) {
+		for (i = 0; i < 16; i++, offset++) {
 			if (i % 2 == 0)
 				fprintf(fp, " ");
 
-			fprintf(fp, "%.2x", *p++);
+			if (n != 0)  {
+				n = n - 1;
+				if (*p >= 0x20 && *p <= 0x7E)
+					buf[i] = *p;
+				else
+					buf[i] = '.';
+
+				fprintf(fp, "%.2x", *p++);
+			} else {
+				fprintf(fp, "  ");
+			}
 		}
-		fprintf(fp, "\n");
+
+		fprintf(fp, "  %s\n", buf);
 	}
 }
 
 void
-hexdump(uint8_t *p, size_t n)
+hexdump(uint8_t *p, size_t n, uint64_t offset)
 {
-	fhexdump(stdout, p, n);
+	fhexdump(stdout, p, n, offset);
 }

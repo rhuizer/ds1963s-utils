@@ -30,3 +30,6 @@ target_link_libraries(ds1963s-tool ds1963s crypto)
 add_executable(ds1963s-emulator ds1963s-emulator.c)
 target_link_libraries(ds1963s-emulator ds1963s crypto)
 endif()
+
+add_executable(ds1963s-shell ds1963s-shell.c)
+target_link_libraries(ds1963s-shell ds1963s readline)

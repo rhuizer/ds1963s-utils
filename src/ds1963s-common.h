@@ -39,9 +39,9 @@ void     ds1963s_address_to_ta(uint16_t address, uint8_t *TA1, uint8_t *TA2);
 int      ds1963s_address_to_page(int address);
 int      ds1963s_address_secret(int address);
 
-int      hex_decode(uint8_t *dst, const char *src, size_t n);
-void     hexdump(uint8_t *s, size_t n);
-void     fhexdump(FILE *fp, uint8_t *s, size_t n);
+ssize_t  hex_decode(uint8_t *dst, const char *src, size_t n);
+void     hexdump(uint8_t *s, size_t n, uint64_t offset);
+void     fhexdump(FILE *fp, uint8_t *s, size_t n, uint64_t offset);
 
 #ifdef __cplusplus
 };

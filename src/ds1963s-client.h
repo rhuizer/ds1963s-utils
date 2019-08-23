@@ -22,6 +22,7 @@
 #ifndef __DS1963S_CLIENT_H
 #define __DS1963S_CLIENT_H
 
+#include <stdint.h>
 #include "ibutton/shaib.h"
 #include "ds1963s-error.h"
 
@@ -47,23 +48,33 @@
 #define WRITE_CYCLE_SECRET_6	14
 #define WRITE_CYCLE_SECRET_7	15
 
-struct ds1963s_client
+typedef struct ds1963s_client
 {
 	const char	*device_path;
 	SHACopr		copr;
 	int		resume;
 	int		errno;
-};
+} ds1963s_client_t;
 
-struct ds1963s_read_auth_page_reply
+typedef struct
+{
+	uint8_t		data[DS1963S_SCRATCHPAD_SIZE];
+	uint8_t		data_size;
+	uint16_t	address;
+	uint8_t		es;
+	uint16_t	crc16;
+	int		crc_ok;
+} ds1963s_client_sp_read_reply_t;
+
+typedef struct
 {
 	uint8_t		data[32];
-	uint8_t		signature[20];
-	size_t		data_size;
+	uint8_t		data_size;
 	uint32_t	data_wc;
 	uint32_t	secret_wc;
 	uint16_t	crc16;
-};
+	int		crc_ok;
+} ds1963s_client_read_auth_page_reply_t;
 
 struct ds1963s_rom
 {
@@ -82,19 +93,13 @@ int  ds1963s_client_page_to_address(struct ds1963s_client *ctx, int page);
 int  ds1963s_client_address_to_page(struct ds1963s_client *ctx, int address);
 
 /* Scratchpad related functions. */
-int ds1963s_client_scratchpad_erase(struct ds1963s_client *ctx);
-int ds1963s_scratchpad_write(struct ds1963s_client *ctx, uint16_t address,
-                             const uint8_t *data, size_t len);
-int ds1963s_scratchpad_write_resume(struct ds1963s_client *ctx,
-                                    uint16_t address, const uint8_t *data,
-                                    size_t len, int resume);
-ssize_t ds1963s_scratchpad_read_resume(struct ds1963s_client *ctx,
-                                       uint8_t *dst, size_t size,
-                                       uint16_t *addr, uint8_t *es,
-                                       int resume);
+int ds1963s_client_sp_copy(ds1963s_client_t *, int address, uint8_t es);
+int ds1963s_client_sp_erase(ds1963s_client_t *, int address);
+int ds1963s_client_sp_match(ds1963s_client_t *, uint8_t hash[20]);
+int ds1963s_client_sp_read(ds1963s_client_t *, ds1963s_client_sp_read_reply_t *);
+int ds1963s_client_sp_write(ds1963s_client_t *, uint16_t address, const uint8_t *data, size_t len);
 
-int ds1963s_client_read_auth(struct ds1963s_client *ctx, int address,
-        struct ds1963s_read_auth_page_reply *reply, int resume);
+int ds1963s_client_read_auth(ds1963s_client_t *, int, ds1963s_client_read_auth_page_reply_t *);
 
 int ds1963s_client_sign_data(struct ds1963s_client *ctx, int address, unsigned char hash[20]);
 
@@ -119,6 +124,9 @@ int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
                                 const void *data, size_t len);
 int ds1963s_client_secret_compute_first(struct ds1963s_client *ctx, int page);
 int ds1963s_client_secret_compute_next(struct ds1963s_client *ctx, int page);
+int ds1963s_client_validate_data_page(struct ds1963s_client *ctx, int page);
+
+int ds1963s_client_hash_read(struct ds1963s_client *ctx, uint8_t hash[20]);
 
 #ifdef __cplusplus
 };

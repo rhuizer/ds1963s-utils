@@ -192,10 +192,8 @@ ds1963s_client_taes_get(struct ds1963s_client *ctx, uint16_t *addr, uint8_t *es)
 	return 0;
 }
 
-ssize_t
-ds1963s_scratchpad_read_resume(struct ds1963s_client *ctx, uint8_t *dst,
-                               size_t size, uint16_t *addr, uint8_t *es,
-                               int resume)
+int
+ds1963s_client_sp_read(ds1963s_client_t *ctx, ds1963s_client_sp_read_reply_t *reply)
 {
 	int portnum = ctx->copr.portnum;
 	size_t bytes_read;
@@ -203,7 +201,7 @@ ds1963s_scratchpad_read_resume(struct ds1963s_client *ctx, uint8_t *dst,
 	uint16_t crc;
 	int i = 0;
 
-	if (resume)
+	if (ctx->resume)
 		buf[i++] = ROM_CMD_RESUME;
 	else if (__ds1963s_client_select_sha(ctx) == -1)
 		return -1;
@@ -215,42 +213,51 @@ ds1963s_scratchpad_read_resume(struct ds1963s_client *ctx, uint8_t *dst,
 	i += 37;
 
 	/* Send the buffer out. */
-	OWASSERT(owBlock(portnum, resume, buf, i), OWERROR_BLOCK_FAILED, -1);
+	OWASSERT(owBlock(portnum, ctx->resume, buf, i), OWERROR_BLOCK_FAILED, -1);
 
 	/* Calculate the bytes read from the scratchpad based on TA1(4:0). */
-	bytes_read = buf[!!resume + 1];
+	bytes_read = buf[ctx->resume + 1];
 	bytes_read = 32 - (bytes_read & 0x1F);
 
 	/* Calculate the CRC16. */
-	crc = ds1963s_crc16(&buf[!!resume], bytes_read + !!resume + 6);
-
-	/* The CRC16 should be equal to 0xB001. */
-	OWASSERT(crc == 0xB001, OWERROR_CRC_FAILED, -1);
+	crc = ds1963s_crc16(&buf[ctx->resume], bytes_read + ctx->resume + 6);
 
 	/* Copy the data we've read. */
-	memcpy(dst, &buf[!!resume + 4], MIN(bytes_read, size));
+	reply->data_size = bytes_read;
+	memcpy(reply->data, &buf[ctx->resume + 4], reply->data_size);
+
+	reply->address = ds1963s_ta_to_address(buf[ctx->resume + 1],
+	                                       buf[ctx->resume + 2]);
+
+	reply->es     = buf[ctx->resume + 3];
+	reply->crc16  = GET_16BIT_MSB(&buf[bytes_read + 4 + ctx->resume]);
+	reply->crc_ok = crc == 0xB001;
 
 	/* Return the number of bytes read. */
 	return bytes_read;
 }
 
-int ds1963s_client_read_auth(struct ds1963s_client *ctx, int address,
-	struct ds1963s_read_auth_page_reply *reply, int resume)
+int
+ds1963s_client_read_auth(ds1963s_client_t *ctx, int address,
+                         ds1963s_client_read_auth_page_reply_t *reply)
 {
 	int portnum = ctx->copr.portnum;
-	uint8_t scratchpad[32];
+	uint8_t read_size;
 	uint8_t buf[56];
 	uint16_t crc;
 	int num_verf;
 	int i = 0;
 
-	/* Bump resume to the range [0, 1] */
-	resume = !!resume;
+	assert(ctx != NULL);
+	assert(reply != NULL);
+	assert(address >= 0 && address <= 0xFFFF);
 
-	if (resume)
+	if (ctx->resume)
 		buf[i++] = ROM_CMD_RESUME;
 	else if (__ds1963s_client_select_sha(ctx) == -1)
 		return -1;
+
+	read_size = 32 - (address % 32);
 
 	/* XXX: study how overdrive works. */
 	num_verf = (in_overdrive[portnum&0x0FF]) ? 10 : 2;
@@ -259,43 +266,41 @@ int ds1963s_client_read_auth(struct ds1963s_client *ctx, int address,
 	buf[i++] = address & 0xFF;
 	buf[i++] = address >> 8;
 
-	/* Padding for transmission of TA1, TA2, CRC16, data and
-	 * verification.
+	/* Padding for transmission of WC counters, TA2, CRC16, data, and
+	 * the verification pattern.
 	 */
-	memset(&buf[i], 0xFF, 42 + num_verf);
-	i += 42 + num_verf;
+	memset(&buf[i], 0xFF, 10 + read_size + num_verf);
+	i += 10 + read_size + num_verf;
 
 	/* Send the block. */
-	OWASSERT(owBlock(portnum, resume, buf, i),
+	OWASSERT(owBlock(portnum, ctx->resume, buf, i),
 	         OWERROR_BLOCK_FAILED, -1);
 
-	/* Calculate the CRC over the received data, and verify it. */
-	crc = ds1963s_crc16(buf + resume, 45);
-	OWASSERT(crc == 0xB001, OWERROR_CRC_FAILED, -1);
+	/* Calculate the CRC over the received data; that is command byte,
+	 * address, data, counters, and the 16-bit crc received.
+	 */
+	crc = ds1963s_crc16(buf + ctx->resume, read_size + 13);
 
 	/* The DS1963S sends 1 bits during SHA1 computation and signals
 	 * that the SHA1 computation finished by sending an alternating pattern
 	 * of 0 and 1 bits.  We detect this pattern here.
-	 *
-	 * XXX: The specification states we should read at least 8 bits of
-	 * this pattern.  Does this happen?
-	 *
-	 * XXX: Do we have a guarantee that this pattern is received within
-	 * the buffer size we use?
 	 */
 	OWASSERT( ((buf[i - 1] & 0xF0) == 0x50) ||
              ((buf[i - 1] & 0xF0) == 0xA0),
              OWERROR_NO_COMPLETION_BYTE, -1);
 
+#if 0
 	/* Read the SHA1 result from the scratchpad. */
 	OWASSERT(ReadScratchpadSHA18(portnum, 0, 0, scratchpad, TRUE),
 	         OWERROR_READ_SCRATCHPAD_FAILED, -1);
+#endif
 
-	memcpy(reply->data, &buf[i - 42 - num_verf], 32);
-	memcpy(reply->signature, &scratchpad[8], 20);
+	memcpy(reply->data, &buf[i - 10 - read_size - num_verf], read_size);
+	reply->data_size = read_size;
 	reply->data_wc   = GET_32BIT_LSB(&buf[i - 10 - num_verf]);
 	reply->secret_wc = GET_32BIT_LSB(&buf[i - 6 - num_verf]);
-	reply->crc16     = GET_16BIT_MSB(&buf[43 + resume]);
+	reply->crc16     = GET_16BIT_MSB(&buf[10 + read_size + 1 + ctx->resume]);
+	reply->crc_ok    = crc == 0xB001;
 
 	return 0;
 }
@@ -358,12 +363,50 @@ int ibutton_secret_zero(int portnum, int pagenum, int secretnum, int resume)
 #endif
 
 int
-ds1963s_client_scratchpad_erase(struct ds1963s_client *ctx)
+ds1963s_client_sp_copy(struct ds1963s_client *ctx, int address, uint8_t es)
+{
+	int     portnum = ctx->copr.portnum;
+	uint8_t buf[10];
+	int     num_verf;
+	int     i = 0;
+
+	if (ctx->resume) {
+		buf[i++] = ROM_CMD_RESUME;
+	} else if (__ds1963s_client_select_sha(ctx) == -1) {
+		return -1;
+	}
+
+	// change number of verification bytes if in overdrive
+	num_verf = (in_overdrive[portnum&0xFF]) ? 4 : 2;
+
+	buf[i++] = CMD_COPY_SCRATCHPAD;
+	buf[i++] = address & 0xFF;
+	buf[i++] = (address >> 8) & 0xFF;
+	buf[i++] = es;
+
+	// verification bytes
+	memset(&buf[i], 0xFF, num_verf);
+	i += num_verf;
+
+	// now send the block
+	OWASSERT( owBlock(portnum, ctx->resume, buf, i),
+		OWERROR_BLOCK_FAILED, FALSE );
+
+	// check verification
+	OWASSERT( ((buf[i - 1] & 0xF0) == 0x50) ||
+	          ((buf[i - 1] & 0xF0) == 0xA0),
+	         OWERROR_NO_COMPLETION_BYTE, FALSE);
+
+	return 0;
+}
+
+int
+ds1963s_client_sp_erase(struct ds1963s_client *ctx, int address)
 {
 	int portnum = ctx->copr.portnum;
 
 	/* Erase the scratchpad to clear the HIDE flag. */
-	if (EraseScratchpadSHA18(portnum, 0, FALSE) == FALSE) {
+	if (EraseScratchpadSHA18(portnum, address, ctx->resume) == FALSE) {
 		ctx->errno = DS1963S_ERROR_SP_ERASE;
 		return -1;
 	}
@@ -372,15 +415,24 @@ ds1963s_client_scratchpad_erase(struct ds1963s_client *ctx)
 }
 
 int
-ds1963s_scratchpad_write(struct ds1963s_client *ctx, uint16_t address,
-                         const uint8_t *data, size_t len)
+ds1963s_client_sp_match(struct ds1963s_client *ctx, uint8_t hash[20])
 {
-	return ds1963s_scratchpad_write_resume(ctx, address, data, len, 0);
+	int ret;
+
+	assert(ctx != NULL);
+
+	ret = MatchScratchpadSHA18(ctx->copr.portnum, hash, ctx->resume);
+	if (ret == -1) {
+		ctx->errno = DS1963S_ERROR_MATCH_SCRATCHPAD;
+		return -1;
+	}
+
+	return ret == TRUE;
 }
 
 int
-ds1963s_scratchpad_write_resume(struct ds1963s_client *ctx, uint16_t address,
-                                const uint8_t *data, size_t len, int resume)
+ds1963s_client_sp_write(struct ds1963s_client *ctx, uint16_t address,
+                        const uint8_t *data, size_t len)
 {
 	int portnum = ctx->copr.portnum;
 	uint8_t buf[64];
@@ -419,12 +471,13 @@ ds1963s_scratchpad_write_resume(struct ds1963s_client *ctx, uint16_t address,
 int ds1963s_client_memory_read(struct ds1963s_client *ctx, uint16_t address,
                                uint8_t *data, size_t size)
 {
-	int portnum = ctx->copr.portnum;
-	uint8_t block[35];
+	int     portnum = ctx->copr.portnum;
+	uint8_t block[160];
 
-	/* XXX: need to check max read size. */
-	if (size > sizeof(block) - 3)
+	if (size > sizeof(block) - 3) {
+		ctx->errno = DS1963S_ERROR_DATA_LEN;
 		return -1;
+	}
 
 	if (__ds1963s_client_select_sha(ctx) == -1)
 		return -1;
@@ -459,13 +512,13 @@ int ds1963s_client_memory_write(struct ds1963s_client *ctx, uint16_t address,
 	}
 
 	/* Erase the scratchpad to clear the HIDE flag. */
-	if (ds1963s_client_scratchpad_erase(ctx) == -1)
+	if (ds1963s_client_sp_erase(ctx, 0) == -1)
 		return -1;
 
 	/* Write the provided data to the scratchpad.  This will also latch in
  	 * TA1 and TA2, which are validated by the copy scratchpad command.
  	 */
-	ret = ds1963s_scratchpad_write_resume(ctx, address, data, size, 1);
+	ret = ds1963s_client_sp_write(ctx, address, data, size);
 	if (ret == -1)
 		return -1;
 
@@ -622,11 +675,11 @@ int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
         secret_addr = 0x200 + secret * 8;
 
 	/* Erase the scratchpad to clear the HIDE flag. */
-	if (ds1963s_client_scratchpad_erase(ctx) == -1)
+	if (ds1963s_client_sp_erase(ctx, 0) == -1)
 		return -1;
 
 	/* Write the secret data to the scratchpad. */ 
-	if (ds1963s_scratchpad_write(ctx, 0, data, len) == -1)
+	if (ds1963s_client_sp_write(ctx, 0, data, len) == -1)
 		return -1;
 
 	/* Read it back to validate it. */
@@ -642,7 +695,7 @@ int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
 	}
 
 	/* Now latch in TA1 and TA2 with secret_addr. */
-	if (ds1963s_scratchpad_write(ctx, secret_addr, data, len) == -1)
+	if (ds1963s_client_sp_write(ctx, secret_addr, data, len) == -1)
 		return -1;
 
 	/* Read back address and es for validation. */
@@ -700,6 +753,46 @@ ds1963s_client_secret_compute_next(struct ds1963s_client *ctx, int page)
 
 	/* Generate the secret using the SHA 0xF0 command. */
 	ret = SHAFunction18(copr->portnum, SHA_COMPUTE_NEXT_SECRET, address, TRUE);
+	if (ret == FALSE) {
+		ctx->errno = DS1963S_ERROR_SHA_FUNCTION;
+		return -1;
+	}
+
+	return 0;
+}
+
+/* Read back the SHA-1 from the scratchpad as output by the following commands:
+ * - Sign data page
+ * - Validate data page
+ */
+int
+ds1963s_client_hash_read(struct ds1963s_client *ctx, uint8_t hash[20])
+{
+	SHACopr *copr = &ctx->copr;
+	uint8_t scratchpad[32];
+
+	if (ReadScratchpadSHA18(copr->portnum, 0, 0, scratchpad, 0) == -1) {
+		ctx->errno = DS1963S_ERROR_READ_SCRATCHPAD;
+		return -1;
+	}
+
+	for (int i = 0; i < 20; i++)
+		hash[i] = scratchpad[i + 8];
+
+	return 0;
+}
+
+int
+ds1963s_client_validate_data_page(struct ds1963s_client *ctx, int page)
+{
+	SHACopr *copr = &ctx->copr;
+	int address, ret;
+
+	if ( (address = ds1963s_client_page_to_address(ctx, page)) == -1)
+		return -1;
+
+	/* Generate the secret using the SHA 0xF0 command. */
+	ret = SHAFunction18(copr->portnum, SHA_VALIDATE_DATA_PAGE, address, TRUE);
 	if (ret == FALSE) {
 		ctx->errno = DS1963S_ERROR_SHA_FUNCTION;
 		return -1;

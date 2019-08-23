@@ -23,6 +23,8 @@
 #define DS1963S_ERROR_SHA_FUNCTION	17	/* SHA function failed.     */
 #define DS1963S_ERROR_COPY_SCRATCHPAD	18	/* Copy Scratchpad failed.  */
 #define DS1963S_ERROR_COPY_SECRET	19	/* Copy secret failed.      */
+#define DS1963S_ERROR_READ_SCRATCHPAD	20	/* Read Scratchpad failed.  */
+#define DS1963S_ERROR_MATCH_SCRATCHPAD	21	/* Match Scratchpad failed. */
 
 #ifdef __cplusplus
 extern "C" {

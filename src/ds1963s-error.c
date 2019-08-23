@@ -24,6 +24,8 @@ static char *__errors[] = {
 	"SHA function failed",
 	"Copy Scratchpad failed",
 	"Copy secret failed",
+	"Read Scratchpad failed",
+	"Match Scratchpad failed"
 };
 
 static size_t errnum = sizeof(__errors) / sizeof(char *);

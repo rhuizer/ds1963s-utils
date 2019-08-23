@@ -44,6 +44,7 @@
 #define MODE_INFO_FULL			64
 #define MODE_SECRET_FIRST_SET		128
 #define MODE_SECRET_NEXT_SET		256
+#define MODE_VALIDATE_DATA_PAGE		512
 
 #define FORMAT_TEXT			1
 #define FORMAT_YAML			2
@@ -67,19 +68,22 @@ void ds1963s_tool_fatal(struct ds1963s_tool *tool)
 	exit(EXIT_FAILURE);
 }
 
-int ds1963s_tool_secret_hmac_target_get(
+int
+ds1963s_tool_secret_hmac_target_get(
 	struct ds1963s_tool *tool,
 	int secret,
 	int link)
 {
-	struct ds1963s_brute *brute = &tool->brute;
-	struct ds1963s_read_auth_page_reply reply;
+	ds1963s_client_read_auth_page_reply_t auth_reply;
+	ds1963s_client_sp_read_reply_t sp_reply;
+	struct ds1963s_brute *brute;
 	int addr, ret;
 
-	assert(brute != NULL);
+	assert(tool != NULL);
 	assert(secret >= 0 && secret <= 8);
 	assert(link >= 0 && link <= 3);
 
+       	brute = &tool->brute;
 	/* Only link 0 is not destructive.  The other 3 links need a partial
 	 * overwrite to make things work.
 	 */
@@ -101,16 +105,17 @@ int ds1963s_tool_secret_hmac_target_get(
 		return -1;
 
 	/* Erase the scratchpad. */
-	if (ds1963s_client_scratchpad_erase(&tool->client) == -1)
+	if (ds1963s_client_sp_erase(&tool->client, 0) == -1)
 		return -1;
 
 	/* Read auth. page over the current scratchpad/data/etc. */
-	if (ds1963s_client_read_auth(&tool->client, addr, &reply, 0) == -1)
+	if (ds1963s_client_read_auth(&tool->client, addr, &auth_reply) == -1)
 		return -1;
 
-	memcpy(brute->secrets[secret].target_hmac[link], reply.signature, 20);
-//	brutus_transaction_log_append(brute, reply.signature, link);
+	if (ds1963s_client_sp_read(&tool->client, &sp_reply) == -1)
+		return -1;
 
+	memcpy(brute->secrets[secret].target_hmac[link], &sp_reply.data[8], 20);
 	return 0;
 }
 
@@ -443,7 +448,7 @@ ds1963s_tool_secret_first_set(struct ds1963s_tool *tool, int secret, int page)
 	}
 
 	/* XXX: for now we only support this with an erased scratchpad. */
-	if (ds1963s_client_scratchpad_erase(ctx) == -1) {
+	if (ds1963s_client_sp_erase(ctx, 0) == -1) {
 		ds1963s_client_perror(ctx, "%s()", __FUNCTION__);
 		ds1963s_tool_fatal(tool);
 	}
@@ -482,7 +487,7 @@ ds1963s_tool_secret_next_set(struct ds1963s_tool *tool, int secret, int page)
 	}
 
 	/* XXX: for now we only support this with an erased scratchpad. */
-	if (ds1963s_client_scratchpad_erase(ctx) == -1) {
+	if (ds1963s_client_sp_erase(ctx, 0) == -1) {
 		ds1963s_client_perror(ctx, "%s()", __FUNCTION__);
 		ds1963s_tool_fatal(tool);
 	}
@@ -502,15 +507,25 @@ ds1963s_tool_secret_next_set(struct ds1963s_tool *tool, int secret, int page)
 }
 
 void
+ds1963s_tool_validate_data_page(struct ds1963s_tool *tool, int page)
+{
+	struct ds1963s_client *ctx = &tool->client;
+
+	if (ds1963s_client_validate_data_page(ctx, page) == -1) {
+		ds1963s_client_perror(ctx, "%s()", __FUNCTION__);
+		ds1963s_tool_fatal(tool);
+	}
+}
+
+void
 ds1963s_tool_read(struct ds1963s_tool *tool, uint16_t address, size_t size)
 {
 	struct ds1963s_client *ctx = &tool->client;
 	uint8_t data[32];
 	size_t i;
 
-	if (ds1963s_client_scratchpad_erase(ctx) == -1) {
-		ds1963s_client_perror(ctx,
-			"ds1963s_client_scratchpad_erase()");
+	if (ds1963s_client_sp_erase(ctx, 0) == -1) {
+		ds1963s_client_perror(ctx, "ds1963s_client_sp_erase()");
 		ds1963s_tool_fatal(tool);
 	}
 
@@ -527,40 +542,48 @@ ds1963s_tool_read(struct ds1963s_tool *tool, uint16_t address, size_t size)
 void
 ds1963s_tool_read_auth(struct ds1963s_tool *tool, int page, size_t size)
 {
-	struct ds1963s_client *ctx = &tool->client;
-	struct ds1963s_read_auth_page_reply reply;
+	ds1963s_client_read_auth_page_reply_t auth_reply;
+	ds1963s_client_sp_read_reply_t sp_reply;
+	struct ds1963s_client *ctx;
 	int addr;
 	int i;
 
+	assert(tool != NULL);
+
+       	ctx = &tool->client;
 	if ( (addr = ds1963s_client_page_to_address(ctx, page)) == -1) {
 		ds1963s_client_perror(ctx, "ds1963s_client_page_to_address()");
 		ds1963s_tool_fatal(tool);
 	}
 
-	if (ds1963s_client_scratchpad_erase(ctx) == -1) {
-		ds1963s_client_perror(ctx,
-			"ds1963s_client_scratchpad_erase()");
+	if (ds1963s_client_sp_erase(ctx, 0) == -1) {
+		ds1963s_client_perror(ctx, "ds1963s_client_sp_erase()");
 		ds1963s_tool_fatal(tool);
 	}
 
-	if (ds1963s_client_read_auth(ctx, addr, &reply, 0) == -1) {
+	if (ds1963s_client_read_auth(ctx, addr, &auth_reply) == -1) {
 		ds1963s_client_perror(ctx, "ds1963s_client_read_auth()");
+		ds1963s_tool_fatal(tool);
+	}
+
+	if (ds1963s_client_sp_read(ctx, &sp_reply) == -1) {
+		ds1963s_client_perror(ctx, "ds1963s_client_sp_read()");
 		ds1963s_tool_fatal(tool);
 	}
 
 	printf("Read authenticated page #%.2d\n", page);
 	printf("---------------------------\n");
-	printf("Data write cycle counter  : 0x%.8x\n", reply.data_wc);
-	printf("Secret write cycle counter: 0x%.8x\n", reply.secret_wc);
-	printf("CRC16                     : 0x%.4x\n", reply.crc16);
+	printf("Data write cycle counter  : 0x%.8x\n", auth_reply.data_wc);
+	printf("Secret write cycle counter: 0x%.8x\n", auth_reply.secret_wc);
+	printf("CRC16                     : 0x%.4x\n", auth_reply.crc16);
 	printf("Data                      : ");
 
 	for (i = 0; i < 32; i++)
-		printf("%.2x", reply.data[i]);
+		printf("%.2x", auth_reply.data[i]);
 	printf("\n");
 
 	printf("SHA1 hash                 : ");
-	ds1963s_client_hash_print(reply.signature);
+	ds1963s_client_hash_print(&sp_reply.data[8]);
 }
 
 void
@@ -579,9 +602,8 @@ ds1963s_tool_sign(struct ds1963s_tool *tool, int page, size_t size)
 	 * to clear this here but rather let the state persist.
 	 */
         /* Erase the scratchpad to clear the HIDE flag. */
-	if (ds1963s_client_scratchpad_erase(ctx) == -1) {
-		ds1963s_client_perror(ctx,
-			"ds1963s_client_scratchpad_erase()");
+	if (ds1963s_client_sp_erase(ctx, 0) == -1) {
+		ds1963s_client_perror(ctx, "ds1963s_client_sp_erase()");
 		ds1963s_tool_fatal(tool);
 	}
 
@@ -624,8 +646,6 @@ void usage(const char *progname)
 static const struct option options[] =
 {
 	{ "address",		  1,	NULL,	'a' },
-	{ "secret-set-first",     1,    NULL,    0  },
-	{ "secret-set-next",      1,    NULL,    0  },
 	{ "device",		  1,	NULL,	'd' },
 	{ "help",		  0,	NULL,	'h' },
 	{ "page",		  1,	NULL,	'p' },
@@ -633,7 +653,10 @@ static const struct option options[] =
 	{ "info-full",		  0,	NULL,	'f' },
 	{ "read",		  1,	NULL,	'r' },
 	{ "read-auth",		  1,	NULL,	't' },
+	{ "secret-set-first",     1,    NULL,    0  },
+	{ "secret-set-next",      1,    NULL,    0  },
 	{ "sign-data",		  1,	NULL,	's' },
+	{ "validate",		  0,	NULL,	 0  },
 	{ "write",		  0,	NULL,	'w' },
 	{ "write-secret",	  1,	NULL,	 0  },
 	{ NULL,			  0,	NULL,	 0  }
@@ -670,6 +693,9 @@ int main(int argc, char **argv)
 			} else if (!strcmp(options[i].name, "secret-set-next")) {
 				mode = MODE_SECRET_NEXT_SET;
 				secret = atoi(optarg);
+				break;
+			} else if (!strcmp(options[i].name, "validate")) {
+				mode = MODE_VALIDATE_DATA_PAGE;
 				break;
 			}
 			break;
@@ -739,6 +765,12 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
+	mask = MODE_VALIDATE_DATA_PAGE;
+	if ( (mode & mask) != 0 && page == -1) {
+		fprintf(stderr, "--validate expects a -p/--page argument.\n");
+		exit(EXIT_FAILURE);
+	}
+
 	/* Write functions take an extra argument. */
 	mask = MODE_WRITE | MODE_WRITE_SECRET;
 	if ( (mode & mask) != 0) {
@@ -794,6 +826,9 @@ int main(int argc, char **argv)
 		break;
 	case MODE_SECRET_NEXT_SET:
 		ds1963s_tool_secret_next_set(&tool, secret, page);
+		break;
+	case MODE_VALIDATE_DATA_PAGE:
+		ds1963s_tool_validate_data_page(&tool, page);
 		break;
 	}
 
