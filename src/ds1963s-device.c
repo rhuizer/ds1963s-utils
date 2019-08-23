@@ -377,8 +377,6 @@ ds1963s_dev_compute_next_secret(struct ds1963s_device *dev)
 	addr = ds1963s_ta_to_address(dev->TA1, dev->TA2);
 	page = ds1963s_address_to_page(addr);
 
-	DEBUG_LOG("NEXT SEC PAGE: %d\n", page);
-
 	__ds1963s_dev_compute_secret(dev, &dev->secret_memory[(page % 8) * 8]);
 }
 
@@ -425,17 +423,35 @@ ds1963s_dev_read_auth_page(struct ds1963s_device *ds1963s, int page)
  * These pages are aliased, with page-8 being the write-cycle-counter
  * updating version of page 0.  As there are no writes this is irrelevant.
  */
-void ds1963s_dev_sign_data_page(struct ds1963s_device *ds1963s)
+int
+ds1963s_dev_sign_data_page(struct ds1963s_device *dev)
 {
-	uint8_t M[64];
+	uint8_t  M[64];
+	uint16_t addr;
+	int      page;
 	SHA1_CTX ctx;
+
+	assert(dev != NULL);
+
+	addr = ds1963s_ta_to_address(dev->TA1, dev->TA2);
+	page = ds1963s_address_to_page(addr);
+	if (page != 0 && page != 8)
+		return -1;
+
+	/* XXX: fix M handling later. */
+	dev->M    = 0;
+
+	dev->X    = 0;
+	dev->CHLG = 0;
+	dev->AUTH = 0;
+	dev->TA1 &= 0xE0;	/* T4:T0 = 00000b */
 
 	__sha1_get_input_1(
 		M,
-		ds1963s->secret_memory,
-		ds1963s->data_memory,
-		__mpx_get(ds1963s->M, ds1963s->X, ds1963s->scratchpad),
-		ds1963s->scratchpad
+		dev->secret_memory,
+		dev->data_memory,
+		__mpx_get(dev->M, dev->X, dev->scratchpad),
+		dev->scratchpad
 	);
 
 	/* We omit the finalize, as the DS1963S does not use it, but rather
@@ -448,15 +464,16 @@ void ds1963s_dev_sign_data_page(struct ds1963s_device *ds1963s)
 
 	/* Write the results to the scratchpad. */
 	__sha1_get_output_1(
-		ds1963s->scratchpad,
+		dev->scratchpad,
 		ctx.state[0] - 0x67452301,
 		ctx.state[1] - 0xEFCDAB89,
 		ctx.state[2] - 0x98BADCFE,
 		ctx.state[3] - 0x10325476,
 		ctx.state[4] - 0xC3D2E1F0
 	);
-}
 
+	return 0;
+}
 
 void
 ds1963s_dev_rom_command_resume(struct ds1963s_device *dev)
@@ -621,28 +638,14 @@ ds1963s_dev_sha_command_compute_next_secret(struct ds1963s_device *dev)
 int
 ds1963s_dev_sha_command_sign_data_page(struct ds1963s_device *dev)
 {
-	uint16_t addr;
-	int      page;
+	if (ds1963s_dev_sign_data_page(dev) == -1)
+		DS1963S_TX_FAIL(dev);
 
-	addr = ds1963s_ta_to_address(dev->TA1, dev->TA2);
-	page = ds1963s_address_to_page(addr);
+	/* XXX: Investigate how many 1s to send later. */
+	for (int i = 0; i < 10; i++)
+		DS1963S_TX_BIT(dev, 1);
 
-	if (page != 0 && page != 8)
-		goto fail;
-
-	/* XXX: set properly. */
-	dev->M = 0;
-
-	dev->X = 0;
-	dev->CHLG = 0;
-	dev->AUTH = 0;
-	dev->TA1 &= 0xE0;	/* T4:T0 = 00000b */
-
-	ds1963s_dev_sign_data_page(dev);
 	DS1963S_TX_SUCCESS(dev);
-
-fail:
-	DS1963S_TX_FAIL(dev);
 }
 
 int

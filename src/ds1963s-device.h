@@ -87,7 +87,7 @@ int  ds1963s_dev_power_on(struct ds1963s_device *ds1963s);
 
 void ds1963s_dev_erase_scratchpad(struct ds1963s_device *ds1963s, int address);
 void ds1963s_dev_read_auth_page(struct ds1963s_device *ds1963s, int page);
-void ds1963s_dev_sign_data_page(struct ds1963s_device *ds1963s);
+int  ds1963s_dev_sign_data_page(struct ds1963s_device *ds1963s);
 
 #ifdef __cplusplus
 };
