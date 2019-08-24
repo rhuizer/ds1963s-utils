@@ -305,7 +305,7 @@ ds1963s_client_read_auth(ds1963s_client_t *ctx, int address,
 }
 
 int
-ds1963s_client_secret_compute_first(ds1963s_client_t *ctx, int address)
+ds1963s_client_sha_command(ds1963s_client_t *ctx, uint8_t cmd, int address)
 {
 	int portnum;
 
@@ -313,100 +313,49 @@ ds1963s_client_secret_compute_first(ds1963s_client_t *ctx, int address)
 	assert(address >= 0 && address <= 0xFFFF);
 
        	portnum = ctx->copr.portnum;
-	/* Generate the secret using the SHA 0x0F command. */
-	if (SHAFunction18(portnum, 0x0F, address, ctx->resume) == FALSE) {
+	/* Generate the secret using the SHA cmd command. */
+	if (SHAFunction18(portnum, cmd, address, ctx->resume) == FALSE) {
 		ctx->errno = DS1963S_ERROR_SHA_FUNCTION;
 		return -1;
 	}
 
 	return 0;
+}
+
+int
+ds1963s_client_secret_compute_first(ds1963s_client_t *ctx, int address)
+{
+	return ds1963s_client_sha_command(ctx, 0x0F, address);
 }
 
 int
 ds1963s_client_secret_compute_next(ds1963s_client_t *ctx, int address)
 {
-	int portnum;
-
-	assert(ctx != NULL);
-	assert(address >= 0 && address <= 0xFFFF);
-
-       	portnum = ctx->copr.portnum;
-	/* Generate the secret using the SHA 0xF0 command. */
-	if (SHAFunction18(portnum, 0xF0, address, ctx->resume) == FALSE) {
-		ctx->errno = DS1963S_ERROR_SHA_FUNCTION;
-		return -1;
-	}
-
-	return 0;
+	return ds1963s_client_sha_command(ctx, 0xF0, address);
 }
 
 int
 ds1963s_client_validate_data_page(ds1963s_client_t *ctx, int address)
 {
-	int portnum;
-
-	assert(ctx != NULL);
-	assert(address >= 0 && address <= 0xFFFF);
-
-	/* Validate the data page using the SHA 0x3C command. */
-       	portnum = ctx->copr.portnum;
-	if (SHAFunction18(portnum, 0x3C, address, ctx->resume) == FALSE) {
-		ctx->errno = DS1963S_ERROR_SHA_FUNCTION;
-		return -1;
-	}
-
-	return 0;
+	return ds1963s_client_sha_command(ctx, 0x3C, address);
 }
 
 int
 ds1963s_client_sign_data_page(ds1963s_client_t *ctx, int address)
 {
-	int portnum;
-
-	assert(ctx != NULL);
-	assert(address >= 0 && address <= 0xFFFF);
-
-       	portnum = ctx->copr.portnum;
-	if (SHAFunction18(portnum, 0xC3, address, ctx->resume) == FALSE) {
-		ctx->errno = DS1963S_ERROR_SHA_FUNCTION;
-		return -1;
-	}
-
-	return 0;
+	return ds1963s_client_sha_command(ctx, 0xC3, address);
 }
 
 int
 ds1963s_client_compute_challenge(ds1963s_client_t *ctx, int address)
 {
-	int portnum;
-
-	assert(ctx != NULL);
-	assert(address >= 0 && address <= 0xFFFF);
-
-       	portnum = ctx->copr.portnum;
-	if (SHAFunction18(portnum, 0xCC, address, ctx->resume) == FALSE) {
-		ctx->errno = DS1963S_ERROR_SHA_FUNCTION;
-		return -1;
-	}
-
-	return 0;
+	return ds1963s_client_sha_command(ctx, 0xCC, address);
 }
 
 int
 ds1963s_client_authenticate_host(ds1963s_client_t *ctx, int address)
 {
-	int portnum;
-
-	assert(ctx != NULL);
-	assert(address >= 0 && address <= 0xFFFF);
-
-       	portnum = ctx->copr.portnum;
-	if (SHAFunction18(portnum, 0xAA, address, ctx->resume) == FALSE) {
-		ctx->errno = DS1963S_ERROR_SHA_FUNCTION;
-		return -1;
-	}
-
-	return 0;
+	return ds1963s_client_sha_command(ctx, 0xAA, address);
 }
 
 int ds1963s_client_serial_get(struct ds1963s_client *ctx, uint8_t serial[6])

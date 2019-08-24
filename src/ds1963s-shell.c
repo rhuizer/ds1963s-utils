@@ -114,6 +114,15 @@ __cmd_is_read_auth_page(const char *cmd)
 }
 
 static int
+__cmd_is_sha(const char *cmd)
+{
+	if (cmd[0] != 's') return 0;
+	if (!strcmp(cmd, "sha-command")) return 1;
+	if (!strcmp(cmd, "sha")) return 1;
+	return 0;
+}
+
+static int
 __cmd_is_compute_first_secret(const char *cmd)
 {
 	if (cmd[0] != 'c') return 0;
@@ -188,6 +197,29 @@ parse_uint(const char *s, unsigned int *p)
 }
 
 static int
+byte_get(const char *function, uint8_t *value)
+{
+	unsigned int _value;
+	char *s;
+
+	if ( (s = strtok(NULL, " \t")) == NULL) {
+		printf("%s expects a byte\n", function);
+		return -1;
+	}
+
+	if (parse_uint(s, &_value) == -1)
+		return -1;
+
+	if (_value > 255) {
+		printf("A byte should be less than or equal to 255.\n");
+		return -1;
+	}
+
+	*value = _value;
+	return 0;
+}
+
+static int
 bool_get(const char *function, int *value)
 {
 	unsigned int _value;
@@ -208,7 +240,6 @@ bool_get(const char *function, int *value)
 
 	*value = _value;
 	return 0;
-
 }
 
 static int
@@ -438,6 +469,23 @@ handle_read_auth_page(void)
 	for (int i = 0; i < reply.data_size; i++)
 		printf("%.2x", reply.data[i]);
 	printf("\n");
+}
+
+void handle_sha_command(void)
+{
+	int     address;
+	uint8_t cmd;
+
+	if (byte_get("sha-command", &cmd) == -1)
+		return;
+
+	if (address_get("sha-command", &address) == -1)
+		return;
+
+	if (ds1963s_client_sha_command(&client, cmd, address) == -1) {
+		ds1963s_client_perror(&client, NULL);
+		return;
+	}
 }
 
 void
@@ -970,6 +1018,8 @@ handle_command(char *line)
 		handle_compute_challenge();
 	} else if (__cmd_is_authenticate_host(cmd)) {
 		handle_authenticate_host();
+	} else if (__cmd_is_sha(cmd)) {
+		handle_sha_command();
 	} else {
 		printf("Unknown command: \"%s\".  Try \"help\".\n", cmd);
 	}

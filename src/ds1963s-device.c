@@ -55,7 +55,6 @@
 		v;							\
 	})
 
-
 #define DS1963S_TX_FAIL(dev)						\
 	do {								\
 		DS1963S_TX_BIT(dev, 1);					\
@@ -979,6 +978,8 @@ ds1963s_dev_memory_function(struct ds1963s_device *dev)
 {
 	int byte;
 
+	assert(dev != NULL);
+
 	byte = DS1963S_RX_BYTE(dev);
 
 	switch (byte) {
@@ -1058,7 +1059,6 @@ int ds1963s_dev_power_on(struct ds1963s_device *dev)
 			break;
 		case DS1963S_STATE_MEMORY_FUNCTION:
 			ds1963s_dev_memory_function(dev);
-			DEBUG_LOG("TA1: %x TA2: %x\n", dev->TA1, dev->TA2);
 			break;
 		}
 	}

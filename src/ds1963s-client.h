@@ -102,6 +102,7 @@ int ds1963s_client_sp_write(ds1963s_client_t *, uint16_t address, const uint8_t 
 int ds1963s_client_read_auth(ds1963s_client_t *, int, ds1963s_client_read_auth_page_reply_t *);
 
 /* Compute SHA commands. */
+int ds1963s_client_sha_command(ds1963s_client_t *ctx, uint8_t cmd, int address);
 int ds1963s_client_secret_compute_first(ds1963s_client_t *ctx, int address);
 int ds1963s_client_secret_compute_next(ds1963s_client_t *ctx, int address);
 int ds1963s_client_validate_data_page(ds1963s_client_t *ctx, int address);
