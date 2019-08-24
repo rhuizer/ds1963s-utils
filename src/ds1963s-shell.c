@@ -575,258 +575,299 @@ handle_help(void)
 	}
 
 	if (__cmd_is_write_scratchpad(arg)) {
-		printf("write-scratchpad, wsp <addr> <data>\n\n");
-		printf("This command writes the hex encoded data in `data' "
-		       "to the scratchpad at address\n");
-		printf("`addr'.  Only T4:T0 (that is, the least significant "
-		       "5 bits of the address) are\n");
-		printf("used and encode the scratchpad offset to start "
-		       "writing to.  Data is encoded in\n");
-		printf("plain hexadecimal format.\n\n");
-		printf("Note that the scratchpad area is 32-bytes large.\n\n");
-		printf("Examples:\n\n");
-		printf("- wsp 0 41424344\n");
-		printf("  Writes the string \"ABCD\" to the scratchpad "
-		       "starting at offset 0.\n\n");
-		printf("- wsp 24 0000000000000000\n");
-		printf("  Sets the last 8 bytes of the scratchpad to 0.\n");
+		printf("write-scratchpad, wsp <addr> <data>\n\n"
+
+		       "This command writes the hex encoded data in `data' "
+		       "to the scratchpad at address\n"
+		       "`addr'.  Only T4:T0 (that is, the least significant "
+		       "5 bits of the address) are\n"
+		       "used and encode the scratchpad offset to start "
+		       "writing to.  Data is encoded in\n"
+		       "plain hexadecimal format.\n\n"
+
+		       "Note that the scratchpad area is 32-bytes large.\n\n"
+
+		       "Examples:\n\n"
+
+		       "- wsp 0 41424344\n"
+		       "  Writes the string \"ABCD\" to the scratchpad "
+		       "starting at offset 0.\n\n"
+		       "- wsp 24 0000000000000000\n"
+		       "  Sets the last 8 bytes of the scratchpad to 0.\n"
+		);
 	} else if (__cmd_is_read_scratchpad(arg)) {
-		printf("read-scratchpad, rsp\n\n");
-		printf("This command will read the TA1, TA2, and E/S "
-		       "registers and scratchpad data\n");
-		printf("starting at offset T4:T0 from the device and "
-		       "display the results.\n\n");
-		printf("Note that because no address is provided, the "
-		       "scratchpad data offset is\n");
-		printf("based on a previous value of the T4:T0.\n\n");
-		printf("The output is verbose, and presents collected "
-		       "information in various forms.\n");
+		printf("read-scratchpad, rsp\n\n"
+
+		       "This command will read the TA1, TA2, and E/S "
+		       "registers and scratchpad data\n"
+		       "starting at offset T4:T0 from the device and "
+		       "display the results.\n\n"
+
+		       "Note that because no address is provided, the "
+		       "scratchpad data offset is\n"
+		       "based on a previous value of the T4:T0.\n\n"
+
+		       "The output is verbose, and presents collected "
+		       "information in various forms.\n"
+		);
 	} else if (__cmd_is_copy_scratchpad(arg)) {
-		printf("copy-scratchpad, csp <addr> <es>\n\n");
-		printf("This command copies data from the scratchpad to "
-		       "memory.  The address in `addr'\n");
-		printf("and the E/S byte in `es' are used as an "
-		       "authorization pattern.  If they are\n");
-		printf("equal to the address in TA1 and TA2, and the E/S "
-		       "byte on the device then the\n");
-		printf("copy will proceed.  In this case the AA flag will "
-		       "be set.\n\n");
-		printf("The source of the copy starts at offset TA4:TA0 and "
-		       "ends at offset E/S,\n");
-		printf("inclusive.  The destination of the copy starts at "
-		       "the address (TA2:TA1) and\n");
-		printf("ends at offset E/S in the page of that address.\n\n");
-		printf("Example:\n\n");
-		printf("esp\n");
-		printf("wsp 63 41\n");
-		printf("csp 63 31\n");
-		printf("rsp\n\n");
-		printf("This sequence will erase the scratchpad, set the "
-		       "address to 63, write the\n");
-		printf("character 'A' to offset 31 (T4:T0 -- the 5 least "
-		       "significant bits of 63) and\n");
-		printf("set E/S to 31.  The copy command will then authorize "
-		       "using the same values as\n");
-		printf("in TA2:TA1 and E/S, and copy the byte at scratchpad "
-		       "offset 31 to memory address\n");
-		printf("63.  The copy ends because E/S is 31.  The AA flag "
-		       "should be set in the final\n");
-		printf("rsp command.\n");
+		printf("copy-scratchpad, csp <addr> <es>\n\n"
+
+		       "This command copies data from the scratchpad to "
+		       "memory.  The address in `addr'\n"
+		       "and the E/S byte in `es' are used as an "
+		       "authorization pattern.  If they are\n"
+		       "equal to the address in TA1 and TA2, and the E/S "
+		       "byte on the device then the\n"
+		       "copy will proceed.  In this case the AA flag will "
+		       "be set.\n\n"
+
+		       "The source of the copy starts at offset TA4:TA0 and "
+		       "ends at offset E/S,\n"
+		       "inclusive.  The destination of the copy starts at "
+		       "the address (TA2:TA1) and\n"
+		       "ends at offset E/S in the page of that address.\n\n"
+
+		       "Example:\n\n"
+
+		       "esp\n"
+		       "wsp 63 41\n"
+		       "csp 63 31\n"
+		       "rsp\n\n"
+		       "This sequence will erase the scratchpad, set the "
+		       "address to 63, write the\n"
+		       "character 'A' to offset 31 (T4:T0 -- the 5 least "
+		       "significant bits of 63) and\n"
+		       "set E/S to 31.  The copy command will then authorize "
+		       "using the same values as\n"
+		       "in TA2:TA1 and E/S, and copy the byte at scratchpad "
+		       "offset 31 to memory address\n"
+		       "63.  The copy ends because E/S is 31.  The AA flag "
+		       "should be set in the final\n"
+		       "rsp command.\n"
+		);
 	} else if (__cmd_is_read_memory(arg)) {
-		printf("read-memory, rm <addr> <size>\n\n");
-		printf("This command will read `size' bytes of data "
-		       "starting at address `addr' and\n");
-		printf("display a hexdump of the data read.\n\n");
-		printf("The address registers on the device will be updated "
-		       "to point to the last\n");
-		printf("address read from.  The E/S byte is not affected.\n\n");
-		printf("Examples:\n\n");
-		printf("- rm 0 32\n");
-		printf("  Display a hexdump of 32-bytes of data at address "
-		       "0.\n\n");
-		printf("- rm 0x0200 0\n");
-		printf("This will not read actual data but just set TA2 to"
-		       "0x02 and TA1 to 0x00.\n");
+		printf("read-memory, rm <addr> <size>\n\n"
+		       "This command will read `size' bytes of data "
+		       "starting at address `addr' and\n"
+		       "display a hexdump of the data read.\n\n"
+
+		       "The address registers on the device will be updated "
+		       "to point to the last\n"
+		       "address read from.  The E/S byte is not affected.\n\n"
+
+		       "Examples:\n\n"
+
+		       "- rm 0 32\n"
+		       "  Display a hexdump of 32-bytes of data at address "
+		       "0.\n\n"
+
+		       "- rm 0x0200 0\n"
+		       "This will not read actual data but just set TA2 to"
+		       "0x02 and TA1 to 0x00.\n"
+		);
 	} else if (__cmd_is_erase_scratchpad(arg)) {
-		printf("erase-scratchpad, esp [addr]\n\n");
-		printf("This command will erase the full 32-byte scratchpad "
-		       "by filling it with 0xFF\n");
-		printf("bytes.  The address in `addr' is latched into the "
-		       "TA2 and TA1 registers but is not used\n");
-		printf("any further.  If `addr' is not specified it will use "
-		       "the default value of 0.\n");
-		printf("Finally the HIDE flag will be set to 0, which is the "
-		       "only way this can be done.\n\n");
-		printf("Examples:\n\n");
-		printf("- esp\n");
-		printf("  Will set all scratchpad bytes to 0xFF, TA2 to 0x00, "
-		       "and TA1 to 0x00.\n\n");
-		printf("- esp 0x123\n");
-		printf("  Will set all scratchpad bytes to 0xFF, TA2 to 0x01, "
-		       "and TA1 to 0x23.\n");
+		printf("erase-scratchpad, esp [addr]\n\n"
+
+		       "This command will erase the full 32-byte scratchpad "
+		       "by filling it with 0xFF\n"
+		       "bytes.  The address in `addr' is latched into the "
+		       "TA2 and TA1 registers but is not used\n"
+		       "any further.  If `addr' is not specified it will use "
+		       "the default value of 0.\n"
+		       "Finally the HIDE flag will be set to 0, which is the "
+		       "only way this can be done.\n\n"
+
+		       "Examples:\n\n"
+
+		       "- esp\n"
+		       "  Will set all scratchpad bytes to 0xFF, TA2 to 0x00, "
+		       "and TA1 to 0x00.\n\n"
+
+		       "- esp 0x123\n"
+		       "  Will set all scratchpad bytes to 0xFF, TA2 to 0x01, "
+		       "and TA1 to 0x23.\n"
+		);
 	} else if (__cmd_is_match_scratchpad(arg)) {
-		printf("match-scratchpad, esp <data>\n\n");
-		printf("This command will compare 20 bytes of hex encoded "
-		       "data in `data' to 20 bytes on\n");
-		printf("the scratchpad starting at offset 8.  This scratchpad "
-		       "location is used by other\n");
-		printf("functions to store a 20 byte SHA-1 hash.\n");
-		printf("If the AUTH flag was set, the MATCH flag will be "
-		       "set.\n");
-		printf("Examples:\n\n");
-		printf("- msp 4141414141414141414142424242424242424242\n");
-		printf("  Will compare bytes at scratchpad[8] through "
-		       "scratchpad[27] (inclusive) to the\n");
-		printf("  string \"AAAAAAAAAABBBBBBBBBB\" and report whether "
-		       "there was a match or a mismatch.\n");
+		printf("match-scratchpad, esp <data>\n\n"
+
+		       "This command will compare 20 bytes of hex encoded "
+		       "data in `data' to 20 bytes on\n"
+		       "the scratchpad starting at offset 8.  This scratchpad "
+		       "location is used by other\n"
+		       "functions to store a 20 byte SHA-1 hash.\n"
+		       "If the AUTH flag was set, the MATCH flag will be "
+		       "set.\n\n"
+
+		       "Examples:\n\n"
+
+		       "- msp 4141414141414141414142424242424242424242\n"
+		       "  Will compare bytes at scratchpad[8] through "
+		       "scratchpad[27] (inclusive) to the\n"
+		       "  string \"AAAAAAAAAABBBBBBBBBB\" and report whether "
+		       "there was a match or a mismatch.\n"
+		);
 	} else if (__cmd_is_read_auth_page(arg)) {
-		printf("read-auth-page, rap <addr>\n\n");
-		printf("This command will read data at address `addr' up to "
-		       "and including offset 31 in\n");
-		printf("the page that address is in and return it.  "
-		       "Furthermore, the write-cycle\n");
-		printf("counter of the page and the write-cycle counter of "
-		       "the secret associated with\n");
-		printf("that page will be returned.\n\n");
-		printf("Finally, a 20 byte SHA-1 based message authentication "
-		       "code over the full page\n");
-		printf("data (not just the data read/returned), the secret "
-		       "associated with the page,\n");
-		printf("the write cycle-counters, the page number, the device "
-		       "serial, and 3 bytes of\n");
-		printf("scratchpad data is stored on the scratchpad starting "
-		       "at offset 8.\n\n");
-		printf("Examples:\n\n");
-		printf("- rap 0\n");
-		printf("  Reads 32 bytes of data on page 0, the W/C of page "
-		       "0, and the W/C of secret 0.\n");
-		printf("  Stores the MAC as discussed above starting at "
-		       "SP[8].\n\n");
-		printf("- rap 31\n");
-		printf("  Reads 1 byte of data from address 31, the W/C of "
-		       "page 0, and the W/C of\n");
-		printf("  secret 0.  Stores the MAC as discussed above "
-		       "starting at SP[8].\n");
+		printf("read-auth-page, rap <addr>\n\n"
+
+		       "This command will read data at address `addr' up to "
+		       "and including offset 31 in\n"
+		       "the page that address is in and return it.  "
+		       "Furthermore, the write-cycle\n"
+		       "counter of the page and the write-cycle counter of "
+		       "the secret associated with\n"
+		       "that page will be returned.\n\n"
+
+		       "Finally, a 20 byte SHA-1 based message authentication "
+		       "code over the full page\n"
+		       "data (not just the data read/returned), the secret "
+		       "associated with the page,\n"
+		       "the write cycle-counters, the page number, the device "
+		       "serial, and 3 bytes of\n"
+		       "scratchpad data is stored on the scratchpad starting "
+		       "at offset 8.\n\n"
+
+		       "Examples:\n\n"
+
+		       "- rap 0\n"
+		       "  Reads 32 bytes of data on page 0, the W/C of page "
+		       "0, and the W/C of secret 0.\n"
+		       "  Stores the MAC as discussed above starting at "
+		       "SP[8].\n\n"
+
+		       "- rap 31\n"
+		       "  Reads 1 byte of data from address 31, the W/C of "
+		       "page 0, and the W/C of\n"
+		       "  secret 0.  Stores the MAC as discussed above "
+		       "starting at SP[8].\n"
+		);
 	} else if (__cmd_is_compute_first_secret(arg)) {
-		printf("compute-first-secret, cfs <addr>\n\n");
-		printf("This command computes a SHA-1 based message "
-		       "authentication code over a NULL\n");
-		printf("secret (that is, eight 0x00 bytes), the full "
-		       "32-bytes data of the page that the\n");
-		printf("address `addr' is in, and 15 bytes of scratchpad "
-		       "data from SP[8] to SP[22]\n");
-		printf("(inclusive).  The address is latched into registers "
-		       "TA2 and TA1 on the device.\n\n");
+		printf("compute-first-secret, cfs <addr>\n\n"
 
-		printf("The result of this function repeatedly stores 8 bytes "
-		       "of the resulting MAC on\n");
-		printf("the scratchpad until it is filled.  This will happen "
-		       "4 times in total.\n\n");
+		       "This command computes a SHA-1 based message "
+		       "authentication code over a NULL\n"
+		       "secret (that is, eight 0x00 bytes), the full "
+		       "32-bytes data of the page that the\n"
+		       "address `addr' is in, and 15 bytes of scratchpad "
+		       "data from SP[8] to SP[22]\n"
+		       "(inclusive).  The address is latched into registers "
+		       "TA2 and TA1 on the device.\n\n"
 
-		printf("The HIDE flag will be set, so afterwards data from "
-		       "the scratchpad can be copied\n");
-		printf("to secret memory using the copy-scratchpad command "
-		       "immediately.  The repetition\n");
-		printf("above means we data can be written to any of the "
-		       "secrets, and up to 4 secrets\n");
-		printf("can be written at once.\n\n");
+		       "The result of this function repeatedly stores 8 bytes "
+		       "of the resulting MAC on\n"
+		       "the scratchpad until it is filled.  This will happen "
+		       "4 times in total.\n\n"
 
-		printf("Examples:\n\n");
-		printf("- cfs 0\n");
-		printf("  Calculates the SHA-1 MAC over a NULL secret, the "
-		       "data in page 0, and 15 bytes\n");
-		printf("  of scratchpad data.  The scratchpad is filled by "
-		       "storing 8 bytes of the\n");
-		printf("  calculated MAC 4 times.  TA2 and TA1 will both me "
-		       "set to 0.\n\n");
+		       "The HIDE flag will be set, so afterwards data from "
+		       "the scratchpad can be copied\n"
+		       "to secret memory using the copy-scratchpad command "
+		       "immediately.  The repetition\n"
+		       "above means we data can be written to any of the "
+		       "secrets, and up to 4 secrets\n"
+		       "can be written at once.\n\n"
 
-		printf("- cfs 0x13\n");
-		printf("  Calculates the SHA-1 MAC over a NULL secret, the "
-		       "data in page 0, and 15 bytes\n");
-		printf("  of scratchpad data.  The scratchpad is filled by "
-		       "storing 8 bytes of the\n");
-		printf("  calculated MAC 4 times.  TA2 will be set to 0, TA1 "
-		       "will be set to 0x13.\n");
+		       "Examples:\n\n"
+		       "- cfs 0\n"
+		       "  Calculates the SHA-1 MAC over a NULL secret, the "
+		       "data in page 0, and 15 bytes\n"
+		       "  of scratchpad data.  The scratchpad is filled by "
+		       "storing 8 bytes of the\n"
+		       "  calculated MAC 4 times.  TA2 and TA1 will both me "
+		       "set to 0.\n\n"
+
+		       "- cfs 0x13\n"
+		       "  Calculates the SHA-1 MAC over a NULL secret, the "
+		       "data in page 0, and 15 bytes\n"
+		       "  of scratchpad data.  The scratchpad is filled by "
+		       "storing 8 bytes of the\n"
+		       "  calculated MAC 4 times.  TA2 will be set to 0, TA1 "
+		       "will be set to 0x13.\n"
+		);
 	} else if (__cmd_is_compute_next_secret(arg)) {
-		printf("compute-next-secret, cns <addr>\n\n");
-		printf("This command computes a SHA-1 based message "
-		       "authentication code over the secret\n");
-		printf("associated with `addr', the full 32-bytes data of the "
-		       "page that the address\n");
-		printf("`addr' is in, and 15 bytes of scratchpad data from "
-		       "SP[8] to SP[22] (inclusive).\n");
-		printf("The address is latched into registers TA2 and TA1 on "
-		       "the device.\n\n");
+		printf("compute-next-secret, cns <addr>\n\n"
 
-		printf("The result of this function repeatedly stores 8 bytes "
-		       "of the resulting MAC on\n");
-		printf("the scratchpad until it is filled.  This will happen "
-		       "4 times in total.\n\n");
+		       "This command computes a SHA-1 based message "
+		       "authentication code over the secret\n"
+		       "associated with `addr', the full 32-bytes data of the "
+		       "page that the address\n"
+		       "`addr' is in, and 15 bytes of scratchpad data from "
+		       "SP[8] to SP[22] (inclusive).\n"
+		       "The address is latched into registers TA2 and TA1 on "
+		       "the device.\n\n"
 
-		printf("The HIDE flag will be set, so afterwards data from "
-		       "the scratchpad can be copied\n");
-		printf("to secret memory using the copy-scratchpad command "
-		       "immediately.  The repetition\n");
-		printf("above means we data can be written to any of the "
-		       "secrets, and up to 4 secrets\n");
-		printf("can be written at once.\n\n");
+		       "The result of this function repeatedly stores 8 bytes "
+		       "of the resulting MAC on\n"
+		       "the scratchpad until it is filled.  This will happen "
+		       "4 times in total.\n\n"
 
-		printf("Examples:\n\n");
-		printf("- cns 0\n");
-		printf("  Calculates the SHA-1 MAC over secret 0, the "
-		       "data in page 0, and 15 bytes\n");
-		printf("  of scratchpad data.  The scratchpad is filled by "
-		       "storing 8 bytes of the\n");
-		printf("  calculated MAC 4 times.  TA2 and TA1 will both me "
-		       "set to 0.\n\n");
+		       "The HIDE flag will be set, so afterwards data from "
+		       "the scratchpad can be copied\n"
+		       "to secret memory using the copy-scratchpad command "
+		       "immediately.  The repetition\n"
+		       "above means we data can be written to any of the "
+		       "secrets, and up to 4 secrets\n"
+		       "can be written at once.\n\n"
 
-		printf("- cns 0x13\n");
-		printf("  Calculates the SHA-1 MAC over a secret 0, the "
-		       "data in page 0, and 15 bytes\n");
-		printf("  of scratchpad data.  The scratchpad is filled by "
-		       "storing 8 bytes of the\n");
-		printf("  calculated MAC 4 times.  TA2 will be set to 0, TA1 "
-		       "will be set to 0x13.\n");
+		       "Examples:\n\n"
+
+		       "- cns 0\n"
+		       "  Calculates the SHA-1 MAC over secret 0, the "
+		       "data in page 0, and 15 bytes\n"
+		       "  of scratchpad data.  The scratchpad is filled by "
+		       "storing 8 bytes of the\n"
+		       "  calculated MAC 4 times.  TA2 and TA1 will both me "
+		       "set to 0.\n\n"
+
+		       "- cns 0x13\n"
+		       "  Calculates the SHA-1 MAC over a secret 0, the "
+		       "data in page 0, and 15 bytes\n"
+		       "  of scratchpad data.  The scratchpad is filled by "
+		       "storing 8 bytes of the\n"
+		       "  calculated MAC 4 times.  TA2 will be set to 0, TA1 "
+		       "will be set to 0x13.\n"
+		);
 	} else if (__cmd_is_validate_data_page(arg)) {
-		printf("validate-data-page, validate, vdp <addr>\n\n");
+		printf("validate-data-page, validate, vdp <addr>\n\n"
 
-		printf("This command will calculate a SHA-1 message "
-		       "authentication code over the full\n");
-		printf("32-byte data in the page that `addr' belongs to, "
-		       "the associated secret, and 15\n");
-		printf("bytes of scratchpad data from SP[8] to SP[22] "
-		       "(inclusive).  This 160-bit SHA-1\n");
-		printf("MAC is then stored at SP[8] to SP[20] (inclusive) and "
-		       "the HIDE flag is set.\n\n");
+		       "This command will calculate a SHA-1 message "
+		       "authentication code over the full\n"
+		       "32-byte data in the page that `addr' belongs to, "
+		       "the associated secret, and 15\n"
+		       "bytes of scratchpad data from SP[8] to SP[22] "
+		       "(inclusive).  This 160-bit SHA-1\n"
+		       "MAC is then stored at SP[8] to SP[20] (inclusive) and "
+		       "the HIDE flag is set.\n"
+		       "TA1 and TA2 will be set to the address `addr'.\n\n"
 
-		printf("The command can be used to validate data in a data "
-		       "page.  It is meant to be\n");
-		printf("used in combination with the match-scratchpad "
-		       "function, and can be used to\n");
-		printf("prove to the device that a secret associated with a "
-		       "data page is known.\n\n");
+		       "The command can be used to validate data in a data "
+		       "page.  It is meant to be\n"
+		       "used in combination with the match-scratchpad "
+		       "function, and can be used to\n"
+		       "prove to the device that a secret associated with a "
+		       "data page is known.\n\n"
 
-		printf("Example:\n");
-		printf("  ds1963s> esp\n");
-		printf("  ds1963s> sdp 0\n");
-		printf("  ds1963s> rsp\n");
-		printf("  Address: 0x0000  (Page   : 0)\n");
-		printf("  TA1    : 0x00    (T07:T00: 0, 0, 0, 0, 0, 0, 0, 0)\n");
-		printf("  TA2    : 0x00    (T15:T08: 0, 0, 0, 0, 0, 0, 0, 0)\n");
-		printf("  E/S    : 0x1f\n");
-		printf("  E      : 0x1f    (E04:E00: 1, 1, 1, 1, 1)\n");
-		printf("  PF     : 0\n");
-		printf("  AA     : 0\n");
-		printf("  CRC16  : 0x33e1  (OK)\n");
-		printf("  Offset : 0       (T04:T00: 0, 0, 0, 0, 0)\n");
-		printf("  Length : 32\n");
-		printf("  Data   : ffffffffffffffff42bd425d27fb70e43df23ab8aed"
-		       "59b90d81b718cffffffff\n");
-		printf("  ds1963s> esp\n");
-		printf("  ds1963s> vdp 0\n");
-		printf("  ds1963s> msp 42bd425d27fb70e43df23ab8aed59b90d81b71"
-		       "8c\n");
-		printf("  MATCH\n");
+		       "Example:\n\n"
+		       "  ds1963s> esp\n"
+		       "  ds1963s> sdp 0\n"
+		       "  ds1963s> rsp\n"
+		       "  Address: 0x0000  (Page   : 0)\n"
+		       "  TA1    : 0x00    (T07:T00: 0, 0, 0, 0, 0, 0, 0, 0)\n"
+		       "  TA2    : 0x00    (T15:T08: 0, 0, 0, 0, 0, 0, 0, 0)\n"
+		       "  E/S    : 0x1f\n"
+		       "  E      : 0x1f    (E04:E00: 1, 1, 1, 1, 1)\n"
+		       "  PF     : 0\n"
+		       "  AA     : 0\n"
+		       "  CRC16  : 0x33e1  (OK)\n"
+		       "  Offset : 0       (T04:T00: 0, 0, 0, 0, 0)\n"
+		       "  Length : 32\n"
+		       "  Data   : ffffffffffffffff42bd425d27fb70e43df23ab8aed"
+		       "59b90d81b718cffffffff\n"
+		       "  ds1963s> esp\n"
+		       "  ds1963s> vdp 0\n"
+		       "  ds1963s> msp 42bd425d27fb70e43df23ab8aed59b90d81b71"
+		       "8c\n"
+		       "  MATCH\n"
+		);
 	} else if (__cmd_is_sign_data_page(arg)) {
 		printf("sign-data-page, sign, sdp <addr>\n\n"
 
@@ -844,7 +885,8 @@ handle_help(void)
 		       "and this signature can\n"
 		       "then be verified by anyone who knows the secret.\n\n"
 
-			"Example:\n"
+			"Examples:\n\n"
+
 		        "- sdp 0\n"
 		        "  Will calculate a SHA-1 MAC over the 32-bytes in "
 			"page 0, secret 0, and the\n"
