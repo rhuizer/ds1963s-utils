@@ -1016,11 +1016,8 @@ ds1963s_dev_memory_function(struct ds1963s_device *dev)
 		break;
 	default:
 		DEBUG_LOG("[ds1963s|MEMORY] Unknown command %.2x\n", byte);
-		abort();
 		break;
 	}
-
-	DEBUG_LOG("TA1: %x TA2: %x\n", dev->TA1, dev->TA2);
 
 	return 0;
 }
