@@ -100,7 +100,14 @@ int ds1963s_client_sp_read(ds1963s_client_t *, ds1963s_client_sp_read_reply_t *)
 int ds1963s_client_sp_write(ds1963s_client_t *, uint16_t address, const uint8_t *data, size_t len);
 
 int ds1963s_client_read_auth(ds1963s_client_t *, int, ds1963s_client_read_auth_page_reply_t *);
+
+/* Compute SHA commands. */
+int ds1963s_client_secret_compute_first(ds1963s_client_t *ctx, int address);
+int ds1963s_client_secret_compute_next(ds1963s_client_t *ctx, int address);
+int ds1963s_client_validate_data_page(ds1963s_client_t *ctx, int address);
 int ds1963s_client_sign_data_page(ds1963s_client_t *ctx, int address);
+int ds1963s_client_compute_challenge(ds1963s_client_t *ctx, int address);
+int ds1963s_client_authenticate_host(ds1963s_client_t *ctx, int address);
 
 int ds1963s_client_rom_get(struct ds1963s_client *ctx, struct ds1963s_rom *rom);
 int ds1963s_client_serial_get(struct ds1963s_client *ctx, uint8_t buf[6]);
@@ -115,16 +122,11 @@ int ds1963s_client_memory_write(struct ds1963s_client *ctx, uint16_t address,
 uint32_t ds1963s_client_prng_get(struct ds1963s_client *ctx);
 
 void ds1963s_client_perror(struct ds1963s_client *ctx, const char *s, ...);
-uint32_t ibutton_write_cycle_get(int portnum, int write_cycle_type);
 int ds1963s_write_cycle_get_all(struct ds1963s_client*, uint32_t [16]);
 int ds1963s_client_hide_set(struct ds1963s_client *ctx);
 
 int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
                                 const void *data, size_t len);
-int ds1963s_client_secret_compute_first(struct ds1963s_client *ctx, int address);
-int ds1963s_client_secret_compute_next(struct ds1963s_client *ctx, int page);
-int ds1963s_client_validate_data_page(struct ds1963s_client *ctx, int page);
-
 int ds1963s_client_hash_read(struct ds1963s_client *ctx, uint8_t hash[20]);
 
 #ifdef __cplusplus
