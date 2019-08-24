@@ -24,7 +24,7 @@
 
 #include "1-wire-bus.h"
 
-#define DS1963S_DEVICE_FAMILY	0x18
+#define DS1963S_DEVICE_FAMILY		0x18
 
 #define DS1963S_STATE_INITIAL		0
 #define DS1963S_STATE_RESET_WAIT	1
@@ -38,7 +38,7 @@ struct ds1963s_device
 	uint8_t		serial[6];
 
 	union {
-		uint8_t		memory[688];
+		uint8_t		memory[1024];
 
 		struct {
 			uint8_t		data_memory[512];
@@ -87,7 +87,8 @@ int  ds1963s_dev_power_on(struct ds1963s_device *ds1963s);
 
 void ds1963s_dev_erase_scratchpad(struct ds1963s_device *ds1963s, int address);
 void ds1963s_dev_read_auth_page(struct ds1963s_device *ds1963s, int page);
-int  ds1963s_dev_sign_data_page(struct ds1963s_device *ds1963s);
+int  ds1963s_dev_sign_data_page(struct ds1963s_device *dev);
+int  ds1963s_dev_validate_data_page(struct ds1963s_device *dev);
 
 #ifdef __cplusplus
 };

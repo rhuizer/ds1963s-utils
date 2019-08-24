@@ -72,13 +72,15 @@
 #define DS1963S_RX_BYTE(dev)	DS1963S_TX_BYTE(dev, 0xFF)
 
 /* Calculate the value for MPX, as used in __sha1_get_input_1. */
-static uint8_t __mpx_get(int M, int X, uint8_t *SP)
+static uint8_t
+__mpx_get(int M, int X, uint8_t *SP)
 {
 	return (M << 7) | (X << 6) | (SP[12] & 0x3F);
 }
 
 /* Calculate the value for MP, as used in __sha1_get_input_2. */
-static uint8_t __mp_get(int M, int X, int page)
+static uint8_t
+__mp_get(int M, int X, int page)
 {
 	return (M << 7) | (X << 6) | (page & 0xF);
 }
@@ -118,9 +120,9 @@ __sha1_get_input_1(uint8_t M[64], uint8_t *SS, uint8_t *PP, uint8_t MPX,
  * - Read Authenticated Page
  * - Compute Challenge
  */
-static void __sha1_get_input_2(uint8_t M[64], uint8_t *SS, uint8_t *CC,
-                               uint8_t *PP, uint8_t FAMC, uint8_t MP,
-                               uint8_t *SN, uint8_t *SP)
+static void
+__sha1_get_input_2(uint8_t M[64], uint8_t *SS, uint8_t *CC, uint8_t *PP,
+                   uint8_t FAMC, uint8_t MP, uint8_t *SN, uint8_t *SP)
 {
 	memcpy(&M[ 0], &SS[ 0],  4);
 	memcpy(&M[ 4], &PP[ 0], 32);
@@ -146,8 +148,9 @@ static void __sha1_get_input_2(uint8_t M[64], uint8_t *SS, uint8_t *CC,
  * - Compute First Secret
  * - Compute Next Secret
  */
-static void __sha1_get_output_1(uint8_t SP[32], uint32_t A, uint32_t B,
-                                uint32_t C, uint32_t D, uint32_t E)
+static void
+__sha1_get_output_1(uint8_t SP[32], uint32_t A, uint32_t B, uint32_t C,
+                    uint32_t D, uint32_t E)
 {
 	SP[ 8] = (E >>  0) & 0xFF;
 	SP[ 9] = (E >>  8) & 0xFF;
@@ -208,6 +211,7 @@ void ds1963s_dev_init(struct ds1963s_device *ds1963s)
 	memset(ds1963s, 0, sizeof *ds1963s);
 
 	ds1963s->family = DS1963S_DEVICE_FAMILY;
+	ds1963s->ES     = 0x1f;
 	memset(ds1963s->data_memory,   0xaa, sizeof ds1963s->data_memory);
 	memset(ds1963s->secret_memory, 0xaa, sizeof ds1963s->secret_memory);
 	memset(ds1963s->scratchpad,    0xff, sizeof ds1963s->scratchpad);
@@ -243,9 +247,15 @@ ds1963s_dev_pf_set(struct ds1963s_device *dev, int pf)
 }
 
 uint16_t
-ds1963s_dev_ta_to_address(struct ds1963s_device *ds1963s)
+ds1963s_dev_address_get(struct ds1963s_device *dev)
 {
-	return ds1963s_ta_to_address(ds1963s->TA1, ds1963s->TA2);
+	return ds1963s_ta_to_address(dev->TA1, dev->TA2) % 0x400;
+}
+
+int
+ds1963s_dev_page_get(struct ds1963s_device *dev)
+{
+	return ds1963s_address_to_page(ds1963s_dev_address_get(dev));
 }
 
 void
@@ -263,19 +273,20 @@ void ds1963s_dev_connect_bus(struct ds1963s_device *ds1963s, struct one_wire_bus
 	one_wire_bus_member_add(&ds1963s->bus_slave, bus);
 }
 
-void ds1963s_dev_erase_scratchpad(struct ds1963s_device *ds1963s, int address)
+void ds1963s_dev_erase_scratchpad(struct ds1963s_device *dev, int address)
 {
-	assert(ds1963s != NULL);
+	assert(dev != NULL);
 	assert(address >= 0 && address <= 65536);
 
-	ds1963s->CHLG = 0;
-	ds1963s->AUTH = 0;
-	ds1963s->TA1  = address & 0xFF;
-	ds1963s->TA2  = (address >> 8) & 0xFF;
+	dev->CHLG = 0;
+	dev->AUTH = 0;
+	dev->TA1  = address & 0xFF;
+	dev->TA2  = (address >> 8) & 0xFF;
+	dev->ES   = 0x1f;
 
-	memset(ds1963s->scratchpad, 0xFF, sizeof ds1963s->scratchpad);
+	memset(dev->scratchpad, 0xFF, sizeof dev->scratchpad);
 
-	ds1963s->HIDE = 0;
+	dev->HIDE = 0;
 }
 
 void ds1963s_dev_write_scratchpad(
@@ -419,24 +430,14 @@ ds1963s_dev_read_auth_page(struct ds1963s_device *ds1963s, int page)
 	);
 }
 
-/* There is no page argument as this function only works on page 0 and 8.
- * These pages are aliased, with page-8 being the write-cycle-counter
- * updating version of page 0.  As there are no writes this is irrelevant.
- */
-int
-ds1963s_dev_sign_data_page(struct ds1963s_device *dev)
+static int
+__ds1963s_dev_sign_data_page(struct ds1963s_device *dev)
 {
 	uint8_t  M[64];
-	uint16_t addr;
 	int      page;
 	SHA1_CTX ctx;
 
 	assert(dev != NULL);
-
-	addr = ds1963s_ta_to_address(dev->TA1, dev->TA2);
-	page = ds1963s_address_to_page(addr);
-	if (page != 0 && page != 8)
-		return -1;
 
 	/* XXX: fix M handling later. */
 	dev->M    = 0;
@@ -444,12 +445,17 @@ ds1963s_dev_sign_data_page(struct ds1963s_device *dev)
 	dev->X    = 0;
 	dev->CHLG = 0;
 	dev->AUTH = 0;
-	dev->TA1 &= 0xE0;	/* T4:T0 = 00000b */
+
+	/* The specifications state T4:T0 = 00000b, but this is not actually
+	 * set in the TA1 register, as can be verified with ds1963s-shell.
+	 * We will align the address used down ourselves in the SHA input.
+	 */
+	page = ds1963s_dev_page_get(dev);
 
 	__sha1_get_input_1(
 		M,
-		dev->secret_memory,
-		dev->data_memory,
+		&dev->secret_memory[(page % 8) * 8],
+		&dev->memory[page * 32],
 		__mpx_get(dev->M, dev->X, dev->scratchpad),
 		dev->scratchpad
 	);
@@ -473,6 +479,32 @@ ds1963s_dev_sign_data_page(struct ds1963s_device *dev)
 	);
 
 	return 0;
+}
+
+int
+ds1963s_dev_sign_data_page(struct ds1963s_device *dev)
+{
+	uint16_t addr;
+	int      page;
+
+	assert(dev != NULL);
+
+	addr = ds1963s_ta_to_address(dev->TA1, dev->TA2);
+	page = ds1963s_address_to_page(addr);
+
+	if (page != 0 && page != 8)
+		return -1;
+
+	return __ds1963s_dev_sign_data_page(dev);
+}
+
+int
+ds1963s_dev_validate_data_page(struct ds1963s_device *dev)
+{
+	assert(dev != NULL);
+
+	dev->HIDE = 1;
+	return __ds1963s_dev_sign_data_page(dev);
 }
 
 void
@@ -636,6 +668,19 @@ ds1963s_dev_sha_command_compute_next_secret(struct ds1963s_device *dev)
 }
 
 int
+ds1963s_dev_sha_command_validate_data_page(struct ds1963s_device *dev)
+{
+	if (ds1963s_dev_validate_data_page(dev) == -1)
+		DS1963S_TX_FAIL(dev);
+
+	/* XXX: Investigate how many 1s to send later. */
+	for (int i = 0; i < 10; i++)
+		DS1963S_TX_BIT(dev, 1);
+
+	DS1963S_TX_SUCCESS(dev);
+}
+
+int
 ds1963s_dev_sha_command_sign_data_page(struct ds1963s_device *dev)
 {
 	if (ds1963s_dev_sign_data_page(dev) == -1)
@@ -678,7 +723,7 @@ ds1963s_dev_memory_command_compute_sha(struct ds1963s_device *dev)
 		break;
 	case 0x3C:
 		DEBUG_LOG("[ds1963s|SHA] Validate Data Page\n");
-//		ds1963s_dev_sha_command_validate_data_page(dev);
+		ds1963s_dev_sha_command_validate_data_page(dev);
 		break;
 	case 0xC3:
 		DEBUG_LOG("[ds1963s|SHA] Sign Data Page\n");
@@ -737,6 +782,41 @@ ds1963s_dev_memory_command_copy_scratchpad(struct ds1963s_device *dev)
 	DS1963S_TX_SUCCESS(dev);
 
 error:
+	DS1963S_TX_FAIL(dev);
+}
+
+int
+ds1963s_dev_memory_command_match_scratchpad(struct ds1963s_device *dev)
+{
+	uint8_t  buf[20];
+	uint16_t crc16;
+
+	dev->CHLG  = 0;
+	dev->MATCH = 0;
+
+	crc16 = 0;
+	crc16 = ds1963s_crc16_update_byte(crc16, 0x3C);
+
+	for (int i = 0; i < 20; i++) {
+		buf[i] = DS1963S_RX_BYTE(dev);
+		crc16 = ds1963s_crc16_update_byte(crc16, buf[i]);
+	}
+
+	/* XXX: datasheet seems to state this is independent of the comparison
+	 * result.  Is this correct?  Need to verify.
+	 */
+	if (dev->AUTH) {
+		dev->AUTH  = 0;
+		dev->MATCH = 1;
+	}
+
+	crc16 = ~crc16;
+	DS1963S_TX_BYTE(dev, crc16 & 0xFF);
+	DS1963S_TX_BYTE(dev, crc16 >> 8);
+
+	if (!memcmp(&dev->scratchpad[8], buf, 20))
+		DS1963S_TX_SUCCESS(dev);
+
 	DS1963S_TX_FAIL(dev);
 }
 
@@ -813,6 +893,8 @@ ds1963s_dev_memory_command_read_scratchpad(struct ds1963s_device *dev)
 	uint16_t crc16;
 	int      i;
 
+	DEBUG_LOG("TA1: %x TA2: %x\n", dev->TA1, dev->TA2);
+
 	DS1963S_TX_BYTE(dev, dev->TA1);
 	DS1963S_TX_BYTE(dev, dev->TA2);
 	DS1963S_TX_BYTE(dev, dev->ES);
@@ -844,6 +926,7 @@ ds1963s_dev_memory_command_erase_scratchpad(struct ds1963s_device *dev)
 	dev->AUTH = 0;
 	dev->TA1  = DS1963S_RX_BYTE(dev);
 	dev->TA2  = DS1963S_RX_BYTE(dev);
+	dev->ES   = 0x1f;
 
 	memset(dev->scratchpad, 0xFF, sizeof dev->scratchpad);
 	/* Simulate TX 1s until the command is finished.
@@ -907,6 +990,10 @@ ds1963s_dev_memory_function(struct ds1963s_device *dev)
 		DEBUG_LOG("[ds1963s|MEMORY] Compute SHA\n");
 		ds1963s_dev_memory_command_compute_sha(dev);
 		break;
+	case 0x3C:
+		DEBUG_LOG("[ds1963s|MEMORY] Match Scratchpad\n");
+		ds1963s_dev_memory_command_match_scratchpad(dev);
+		break;
 	case 0x55:
 		DEBUG_LOG("[ds1963s|MEMORY] Copy Scratchpad\n");
 		ds1963s_dev_memory_command_copy_scratchpad(dev);
@@ -932,6 +1019,8 @@ ds1963s_dev_memory_function(struct ds1963s_device *dev)
 		abort();
 		break;
 	}
+
+	DEBUG_LOG("TA1: %x TA2: %x\n", dev->TA1, dev->TA2);
 
 	return 0;
 }
@@ -972,39 +1061,10 @@ int ds1963s_dev_power_on(struct ds1963s_device *dev)
 			break;
 		case DS1963S_STATE_MEMORY_FUNCTION:
 			ds1963s_dev_memory_function(dev);
+			DEBUG_LOG("TA1: %x TA2: %x\n", dev->TA1, dev->TA2);
 			break;
 		}
 	}
 
 	return 0;
 }
-
-#ifdef DS1963S_DEVICE_TEST
-int main(void)
-{
-	struct ds1963s_device ds1963s;
-
-	memset(&ds1963s, 0, sizeof ds1963s);
-	memset(ds1963s.scratchpad, 0xff, sizeof ds1963s.scratchpad);
-	memcpy(ds1963s.secret_memory, "\x00\x00\x01\x00\x01\x05\x07\x00", 8);
-
-	ds1963s_sign_page(&ds1963s);
-	int i;
-
-	for (i = 0; i < 32; i++)
-		printf("%.2x", ds1963s.scratchpad[i]);
-	printf("\n");
-
-	/* Test initialization for read auth page. */
-	memset(&ds1963s, 0, sizeof ds1963s);
-	memset(ds1963s.scratchpad, 0xff, sizeof ds1963s.scratchpad);
-	ds1963s.data_wc[0] = 1;
-	memcpy(ds1963s.serial, "\x8e\x4f\x68\x00\x00\x00", 6);
-	memcpy(ds1963s.secret_memory, "\x00\x00\x01\x00\x01\x05\x07\x00", 8);
-	ds1963s_read_auth_page(&ds1963s, 0);
-
-	for (i = 0; i < 32; i++)
-		printf("%.2x", ds1963s.scratchpad[i]);
-	printf("\n");
-}
-#endif
