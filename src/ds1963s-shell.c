@@ -704,6 +704,96 @@ handle_help(void)
 		       "page 0, and the W/C of\n");
 		printf("  secret 0.  Stores the MAC as discussed above "
 		       "starting at SP[8].\n");
+	} else if (__cmd_is_compute_first_secret(arg)) {
+		printf("compute-first-secret, cfs <addr>\n\n");
+		printf("This command computes a SHA-1 based message "
+		       "authentication code over a NULL\n");
+		printf("secret (that is, eight 0x00 bytes), the full "
+		       "32-bytes data of the page that the\n");
+		printf("address `addr' is in, and 15 bytes of scratchpad "
+		       "data from SP[8] to SP[22]\n");
+		printf("(inclusive).  The address is latched into registers "
+		       "TA2 and TA1 on the device.\n\n");
+
+		printf("The result of this function repeatedly stores 8 bytes "
+		       "of the resulting MAC on\n");
+		printf("the scratchpad until it is filled.  This will happen "
+		       "4 times in total.\n\n");
+
+		printf("The HIDE flag will be set, so afterwards data from "
+		       "the scratchpad can be copied\n");
+		printf("to secret memory using the copy-scratchpad command "
+		       "immediately.  The repetition\n");
+		printf("above means we data can be written to any of the "
+		       "secrets, and up to 4 secrets\n");
+		printf("can be written at once.\n\n");
+
+		printf("Examples:\n\n");
+		printf("- cfs 0\n");
+		printf("  Calculates the SHA-1 MAC over a NULL secret, the "
+		       "data in page 0, and 15 bytes\n");
+		printf("  of scratchpad data.  The scratchpad is filled by "
+		       "storing 8 bytes of the\n");
+		printf("  calculated MAC 4 times.  TA2 and TA1 will both me "
+		       "set to 0.\n\n");
+
+		printf("- cfs 0x13\n");
+		printf("  Calculates the SHA-1 MAC over a NULL secret, the "
+		       "data in page 0, and 15 bytes\n");
+		printf("  of scratchpad data.  The scratchpad is filled by "
+		       "storing 8 bytes of the\n");
+		printf("  calculated MAC 4 times.  TA2 will be set to 0, TA1 "
+		       "will be set to 0x13.\n");
+	} else if (__cmd_is_compute_next_secret(arg)) {
+		printf("compute-next-secret, cns <addr>\n\n");
+		printf("This command computes a SHA-1 based message "
+		       "authentication code over the secret\n");
+		printf("associated with `addr', the full 32-bytes data of the "
+		       "page that the address\n");
+		printf("`addr' is in, and 15 bytes of scratchpad data from "
+		       "SP[8] to SP[22] (inclusive).\n");
+		printf("The address is latched into registers TA2 and TA1 on "
+		       "the device.\n\n");
+
+		printf("The result of this function repeatedly stores 8 bytes "
+		       "of the resulting MAC on\n");
+		printf("the scratchpad until it is filled.  This will happen "
+		       "4 times in total.\n\n");
+
+		printf("The HIDE flag will be set, so afterwards data from "
+		       "the scratchpad can be copied\n");
+		printf("to secret memory using the copy-scratchpad command "
+		       "immediately.  The repetition\n");
+		printf("above means we data can be written to any of the "
+		       "secrets, and up to 4 secrets\n");
+		printf("can be written at once.\n\n");
+
+		printf("Examples:\n\n");
+		printf("- cns 0\n");
+		printf("  Calculates the SHA-1 MAC over secret 0, the "
+		       "data in page 0, and 15 bytes\n");
+		printf("  of scratchpad data.  The scratchpad is filled by "
+		       "storing 8 bytes of the\n");
+		printf("  calculated MAC 4 times.  TA2 and TA1 will both me "
+		       "set to 0.\n\n");
+
+		printf("- cns 0x13\n");
+		printf("  Calculates the SHA-1 MAC over a secret 0, the "
+		       "data in page 0, and 15 bytes\n");
+		printf("  of scratchpad data.  The scratchpad is filled by "
+		       "storing 8 bytes of the\n");
+		printf("  calculated MAC 4 times.  TA2 will be set to 0, TA1 "
+		       "will be set to 0x13.\n");
+	} else if (__cmd_is_validate_data_page(arg)) {
+		printf("This is a stub entry.\n");
+	} else if (__cmd_is_sign_data_page(arg)) {
+		printf("This is a stub entry.\n");
+	} else if (__cmd_is_compute_challenge(arg)) {
+		printf("This is a stub entry.\n");
+	} else if (__cmd_is_authenticate_host(arg)) {
+		printf("This is a stub entry.\n");
+	} else {
+		printf("Unknown command: \"%s\".  Try \"help\".\n", arg);
 	}
 }
 
