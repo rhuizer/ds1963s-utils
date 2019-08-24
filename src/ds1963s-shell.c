@@ -1,10 +1,10 @@
 /* ds1963s-shell.c
  *
- * A interactive utility for low-level ds1963s experimentation.
+ * A interactive utility for ds1963s experimentation.
  *
  * Dedicated to Yuzuyu Arielle Huizer.
  *
- * Copyright (C) 2013-2019  Ronald Huizer <rhuizer@hexpedition.com>
+ * Copyright (C) 2019  Ronald Huizer <rhuizer@hexpedition.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,32 +27,78 @@
 
 #define DEFAULT_SERIAL_PORT	"/dev/ttyUSB0"
 
-#define STATE_DS2480B		0
-#define STATE_DS1963S		1
-#define STATE_SCRATCHPAD	2
-#define STATE_MEMORY		3
-
-void handle_scratchpad_command(char *);
-
 static struct ds1963s_client client;
-static int state = STATE_DS1963S;
 
 static int
-__cmd_is_scratchpad(const char *cmd)
+__cmd_is_help(const char *cmd)
 {
-	if (cmd[0] != 's') return 0;
-	if (!strcmp(cmd, "scratchpad")) return 1;
-	if (!strcmp(cmd, "sp")) return 1;
+	if (cmd[0] != 'h') return 0;
+	if (!strcmp(cmd, "h")) return 1;
+	if (!strcmp(cmd, "help")) return 1;
 	return 0;
 }
 
 static int
-__cmd_is_memory(const char *cmd)
+__cmd_is_set(const char *cmd)
+{
+	if (cmd[0] != 's') return 0;
+	if (!strcmp(cmd, "set")) return 1;
+	return 0;
+}
+
+static int
+__cmd_is_write_scratchpad(const char *cmd)
+{
+	if (cmd[0] != 'w') return 0;
+	if (!strcmp(cmd, "wsp")) return 1;
+	if (!strcmp(cmd, "write-scratchpad")) return 1;
+	return 0;
+
+}
+
+static int
+__cmd_is_read_scratchpad(const char *cmd)
+{
+	if (cmd[0] != 'r') return 0;
+	if (!strcmp(cmd, "rsp")) return 1;
+	if (!strcmp(cmd, "read-scratchpad")) return 1;
+	return 0;
+
+}
+
+static int
+__cmd_is_copy_scratchpad(const char *cmd)
+{
+	if (cmd[0] != 'c') return 0;
+	if (!strcmp(cmd, "csp")) return 1;
+	if (!strcmp(cmd, "copy-scratchpad")) return 1;
+	return 0;
+}
+
+static int
+__cmd_is_read_memory(const char *cmd)
+{
+	if (cmd[0] != 'r') return 0;
+	if (!strcmp(cmd, "rm")) return 1;
+	if (!strcmp(cmd, "read-memory")) return 1;
+	return 0;
+}
+
+static int
+__cmd_is_erase_scratchpad(const char *cmd)
+{
+	if (cmd[0] != 'e') return 0;
+	if (!strcmp(cmd, "esp")) return 1;
+	if (!strcmp(cmd, "erase-scratchpad")) return 1;
+	return 0;
+}
+
+static int
+__cmd_is_match_scratchpad(const char *cmd)
 {
 	if (cmd[0] != 'm') return 0;
-	if (!strcmp(cmd, "memory")) return 1;
-	if (!strcmp(cmd, "mem")) return 1;
-	if (!strcmp(cmd, "m")) return 1;
+	if (!strcmp(cmd, "msp")) return 1;
+	if (!strcmp(cmd, "match-scratchpad")) return 1;
 	return 0;
 }
 
@@ -141,6 +187,30 @@ parse_uint(const char *s, unsigned int *p)
 }
 
 static int
+bool_get(const char *function, int *value)
+{
+	unsigned int _value;
+	char *s;
+
+	if ( (s = strtok(NULL, " \t")) == NULL) {
+		printf("%s expects a boolean\n", function);
+		return -1;
+	}
+
+	if (parse_uint(s, &_value) == -1)
+		return -1;
+
+	if (_value > 1) {
+		printf("A boolean should be either 0 or 1.\n");
+		return -1;
+	}
+
+	*value = _value;
+	return 0;
+
+}
+
+static int
 address_get(const char *function, int *address)
 {
 	unsigned int _address;
@@ -163,25 +233,8 @@ address_get(const char *function, int *address)
 	return 0;
 }
 
-const char *
-prompt(void)
-{
-	switch (state) {
-	case STATE_DS2480B:
-		return "ds2480b> ";
-	case STATE_DS1963S:
-		return "ds1963s> ";
-	case STATE_SCRATCHPAD:
-		return "scratchpad> ";
-	case STATE_MEMORY:
-		return "memory> ";
-	}
-
-	return NULL;
-}
-
 void
-handle_scratchpad_copy(void)
+handle_copy_scratchpad(void)
 {
 	unsigned int address, es;
 	char *s;
@@ -207,7 +260,7 @@ handle_scratchpad_copy(void)
 }
 
 void
-handle_scratchpad_erase(void)
+handle_erase_scratchpad(void)
 {
 	unsigned int address;
 	char *s;
@@ -224,18 +277,21 @@ handle_scratchpad_erase(void)
 	}
 }
 
-void handle_scratchpad_match(void)
+void handle_match_scratchpad(void)
 {
 	uint8_t hash[20] = { 0 };
 	int     ret;
 	char *  s;
 
-	if ( (s = strtok(NULL, " \t")) == NULL) {
+	if ( (s = strtok(NULL, " \t")) == NULL || strlen(s) != 40) {
 		printf("match expects a 20 bytes of hexadecimal data\n");
 		return;
 	}
 
-	hex_decode(hash, s, 20);
+	if (hex_decode(hash, s, 20) == -1) {
+		printf("match expects a 20 bytes of hexadecimal data\n");
+		return;
+	}
 
 	if ( (ret = ds1963s_client_sp_match(&client, hash)) == -1) {
 		ds1963s_client_perror(&client, NULL);
@@ -246,7 +302,7 @@ void handle_scratchpad_match(void)
 }
 
 void
-handle_scratchpad_read(void)
+handle_read_scratchpad(void)
 {
 	ds1963s_client_sp_read_reply_t reply;
 	uint8_t  TA1, TA2;
@@ -299,7 +355,7 @@ handle_scratchpad_read(void)
 }
 
 void
-handle_scratchpad_write(void)
+handle_write_scratchpad(void)
 {
 	unsigned int address;
 	uint8_t      data[32];
@@ -329,7 +385,7 @@ handle_scratchpad_write(void)
 }
 
 void
-handle_memory_read(void)
+handle_read_memory(void)
 {
 	unsigned int address, size;
 	uint8_t      buf[157];
@@ -357,6 +413,30 @@ handle_memory_read(void)
 	}
 
 	hexdump(buf, size, address);
+}
+
+void
+handle_read_auth_page(void)
+{
+	ds1963s_client_read_auth_page_reply_t reply;
+	int address;
+
+	if (address_get("read-auth-page", &address) == -1)
+		return;
+
+	if (ds1963s_client_read_auth(&client, address, &reply) == -1) {
+		ds1963s_client_perror(&client, NULL);
+		return;
+	}
+
+	printf("W/C page  : 0x%.8x\n", reply.data_wc);
+	printf("W/C secret: 0x%.8x\n", reply.secret_wc);
+	printf("CRC16     : 0x%.4x  (%s)\n",
+		reply.crc16, reply.crc_ok ? "OK" : "WRONG");
+	printf("Data      : ");
+	for (int i = 0; i < reply.data_size; i++)
+		printf("%.2x", reply.data[i]);
+	printf("\n");
 }
 
 void
@@ -459,99 +539,220 @@ handle_authenticate_host(void)
 }
 
 void
-handle_read_auth_page(void)
+handle_main_help(void)
 {
-	ds1963s_client_read_auth_page_reply_t reply;
-	int address;
+	printf("List of commands:\n\n");
+	printf("set                       -- Manage setting variables\n");
+	printf("help, h                   -- This help menu\n");
 
-	if (address_get("read-auth-page", &address) == -1)
-		return;
+	printf("List of memory commands:\n\n");
+	printf("write-scratchpad,     wsp -- Write data to the scratchpad\n");
+	printf("read-scratchpad,      rsp -- Read data from the scratchpad\n");
+	printf("copy-scratchpad,      csp -- Copy scratchpad data to memory\n");
+	printf("read-memory,          rm  -- Read data from memory\n");
+	printf("erase-scratchpad,     esp -- Erase the scratchpad\n");
+	printf("match-scratchpad,     msp -- Match the scratchpad to data\n");
+	printf("read-auth-page,       rap -- Read authenticated page\n");
 
-	if (ds1963s_client_read_auth(&client, address, &reply) == -1) {
-		ds1963s_client_perror(&client, NULL);
-		return;
-	}
-
-	printf("W/C page  : 0x%.8x\n", reply.data_wc);
-	printf("W/C secret: 0x%.8x\n", reply.secret_wc);
-	printf("CRC16     : 0x%.4x  (%s)\n",
-		reply.crc16, reply.crc_ok ? "OK" : "WRONG");
-	printf("Data      : ");
-	for (int i = 0; i < reply.data_size; i++)
-		printf("%.2x", reply.data[i]);
-	printf("\n");
+	printf("\nList of SHA commands:\n\n");
+	printf("compute-first-secret, cfs -- Compute the first secret\n");
+	printf("compute-next-secret,  cns -- Compute the next secret\n");
+	printf("validate-data-page,   vdp -- Validate a page in memory\n");
+	printf("sign-data-page,       sdp -- Sign a page in memory\n");
+	printf("compute-challenge,    cc  -- Compute a challenge\n");
+	printf("authenticate-host,    ah  -- Authenticate a host\n");
 }
 
 void
-handle_memory_command(char *line)
+handle_help(void)
 {
-	char *cmd;
+	char *arg;
 
-	if ( (cmd = strtok(line, " \t")) == NULL) {
-		state = STATE_MEMORY;
+	if ( (arg = strtok(NULL, " \t")) == NULL) {
+		handle_main_help();
 		return;
 	}
 
-	if (!strcmp(cmd, "help")) {
-		printf("Lorem bla bla\n");
-	} else if (!strcmp(cmd, "ds1963s")) {
-		state = STATE_DS1963S;
-	} else if (__cmd_is_scratchpad(cmd)) {
-		handle_scratchpad_command(NULL);
-	} else if (__cmd_is_memory(cmd)) {
-		state = STATE_MEMORY;
-	} else if (!strcmp(cmd, "read") || !strcmp(cmd, "r")) {
-		handle_memory_read();
-	} else if (__cmd_is_read_auth_page(cmd)) {
-		handle_read_auth_page();
+	if (__cmd_is_write_scratchpad(arg)) {
+		printf("write-scratchpad, wsp <addr> <data>\n\n");
+		printf("This command writes the hex encoded data in `data' "
+		       "to the scratchpad at address\n");
+		printf("`addr'.  Only T4:T0 (that is, the least significant "
+		       "5 bits of the address) are\n");
+		printf("used and encode the scratchpad offset to start "
+		       "writing to.  Data is encoded in\n");
+		printf("plain hexadecimal format.\n\n");
+		printf("Note that the scratchpad area is 32-bytes large.\n\n");
+		printf("Examples:\n\n");
+		printf("- wsp 0 41424344\n");
+		printf("  Writes the string \"ABCD\" to the scratchpad "
+		       "starting at offset 0.\n\n");
+		printf("- wsp 24 0000000000000000\n");
+		printf("  Sets the last 8 bytes of the scratchpad to 0.\n");
+	} else if (__cmd_is_read_scratchpad(arg)) {
+		printf("read-scratchpad, rsp\n\n");
+		printf("This command will read the TA1, TA2, and E/S "
+		       "registers and scratchpad data\n");
+		printf("starting at offset T4:T0 from the device and "
+		       "display the results.\n\n");
+		printf("Note that because no address is provided, the "
+		       "scratchpad data offset is\n");
+		printf("based on a previous value of the T4:T0.\n\n");
+		printf("The output is verbose, and presents collected "
+		       "information in various forms.\n");
+	} else if (__cmd_is_copy_scratchpad(arg)) {
+		printf("copy-scratchpad, csp <addr> <es>\n\n");
+		printf("This command copies data from the scratchpad to "
+		       "memory.  The address in `addr'\n");
+		printf("and the E/S byte in `es' are used as an "
+		       "authorization pattern.  If they are\n");
+		printf("equal to the address in TA1 and TA2, and the E/S "
+		       "byte on the device then the\n");
+		printf("copy will proceed.  In this case the AA flag will "
+		       "be set.\n\n");
+		printf("The source of the copy starts at offset TA4:TA0 and "
+		       "ends at offset E/S,\n");
+		printf("inclusive.  The destination of the copy starts at "
+		       "the address (TA2:TA1) and\n");
+		printf("ends at offset E/S in the page of that address.\n\n");
+		printf("Example:\n\n");
+		printf("esp\n");
+		printf("wsp 63 41\n");
+		printf("csp 63 31\n");
+		printf("rsp\n\n");
+		printf("This sequence will erase the scratchpad, set the "
+		       "address to 63, write the\n");
+		printf("character 'A' to offset 31 (T4:T0 -- the 5 least "
+		       "significant bits of 63) and\n");
+		printf("set E/S to 31.  The copy command will then authorize "
+		       "using the same values as\n");
+		printf("in TA2:TA1 and E/S, and copy the byte at scratchpad "
+		       "offset 31 to memory address\n");
+		printf("63.  The copy ends because E/S is 31.  The AA flag "
+		       "should be set in the final\n");
+		printf("rsp command.\n");
+	} else if (__cmd_is_read_memory(arg)) {
+		printf("read-memory, rm <addr> <size>\n\n");
+		printf("This command will read `size' bytes of data "
+		       "starting at address `addr' and\n");
+		printf("display a hexdump of the data read.\n\n");
+		printf("The address registers on the device will be updated "
+		       "to point to the last\n");
+		printf("address read from.  The E/S byte is not affected.\n\n");
+		printf("Examples:\n\n");
+		printf("- rm 0 32\n");
+		printf("  Display a hexdump of 32-bytes of data at address "
+		       "0.\n\n");
+		printf("- rm 0x0200 0\n");
+		printf("This will not read actual data but just set TA2 to"
+		       "0x02 and TA1 to 0x00.\n");
+	} else if (__cmd_is_erase_scratchpad(arg)) {
+		printf("erase-scratchpad, esp [addr]\n\n");
+		printf("This command will erase the full 32-byte scratchpad "
+		       "by filling it with 0xFF\n");
+		printf("bytes.  The address in `addr' is latched into the "
+		       "TA2 and TA1 registers but is not used\n");
+		printf("any further.  If `addr' is not specified it will use "
+		       "the default value of 0.\n");
+		printf("Finally the HIDE flag will be set to 0, which is the "
+		       "only way this can be done.\n\n");
+		printf("Examples:\n\n");
+		printf("- esp\n");
+		printf("  Will set all scratchpad bytes to 0xFF, TA2 to 0x00, "
+		       "and TA1 to 0x00.\n\n");
+		printf("- esp 0x123\n");
+		printf("  Will set all scratchpad bytes to 0xFF, TA2 to 0x01, "
+		       "and TA2 to 0x23.\n");
+	} else if (__cmd_is_match_scratchpad(arg)) {
+		printf("match-scratchpad, esp <data>\n\n");
+		printf("This command will compare 20 bytes of hex encoded "
+		       "data in `data' to 20 bytes on\n");
+		printf("the scratchpad starting at offset 8.  This scratchpad "
+		       "location is used by other\n");
+		printf("functions to store a 20 byte SHA-1 hash.\n\n");
+		printf("Examples:\n\n");
+		printf("- msp 4141414141414141414142424242424242424242\n");
+		printf("  Will compare bytes at scratchpad[8] through "
+		       "scratchpad[27] (inclusive) to the\n");
+		printf("  string \"AAAAAAAAAABBBBBBBBBB\" and report whether "
+		       "there was a match or a mismatch.\n");
+	} else if (__cmd_is_read_auth_page(arg)) {
+		printf("read-auth-page, rap <addr>\n\n");
+		printf("This command will read data at address `addr' up to "
+		       "and including offset 31 in\n");
+		printf("the page that address is in and return it.  "
+		       "Furthermore, the write-cycle\n");
+		printf("counter of the page and the write-cycle counter of "
+		       "the secret associated with\n");
+		printf("that page will be returned.\n\n");
+		printf("Finally, a 20 byte SHA-1 based message authentication "
+		       "code over the full page\n");
+		printf("data (not just the data read/returned), the secret "
+		       "associated with the page,\n");
+		printf("the write cycle-counters, the page number, the device "
+		       "serial, and 3 bytes of\n");
+		printf("scratchpad data is stored on the scratchpad starting "
+		       "at offset 8.\n\n");
+		printf("Examples:\n\n");
+		printf("- rap 0\n");
+		printf("  Reads 32 bytes of data on page 0, the W/C of page "
+		       "0, and the W/C of secret 0.\n");
+		printf("  Stores the MAC as discussed above starting at "
+		       "SP[8].\n\n");
+		printf("- rap 31\n");
+		printf("  Reads 1 byte of data from address 31, the W/C of "
+		       "page 0, and the W/C of\n");
+		printf("  secret 0.  Stores the MAC as discussed above "
+		       "starting at SP[8].\n");
 	}
 }
 
 void
-handle_scratchpad_command(char *line)
+handle_set(void)
 {
-	char *cmd;
+	char *arg;
+	int   b;
 
-	if ( (cmd = strtok(line, " \t")) == NULL) {
-		state = STATE_SCRATCHPAD;
+	if ( (arg = strtok(NULL, " \t")) == NULL) {
+		printf("resume: %d\n", client.resume);
 		return;
 	}
 
-	if (!strcmp(cmd, "help")) {
-		printf("Lorem bla bla\n");
-	} else if (!strcmp(cmd, "ds1963s")) {
-		state = STATE_DS1963S;
-	} else if (__cmd_is_scratchpad(cmd)) {
-		state = STATE_SCRATCHPAD;
-	} else if (__cmd_is_memory(cmd)) {
-		handle_memory_command(NULL);
-	} else if (!strcmp(cmd, "copy") || !strcmp(cmd, "c")) {
-		handle_scratchpad_copy();
-	} else if (!strcmp(cmd, "erase") || !strcmp(cmd, "e")) {
-		handle_scratchpad_erase();
-	} else if (!strcmp(cmd, "match") || !strcmp(cmd, "m")) {
-		handle_scratchpad_match();
-	} else if (!strcmp(cmd, "read") || !strcmp(cmd, "r")) {
-		handle_scratchpad_read();
-	} else if (!strcmp(cmd, "write") || !strcmp(cmd, "w")) {
-		handle_scratchpad_write();
+	if (!strcmp(arg, "resume")) {
+		if (bool_get("set resume", &b) == -1)
+			return;
+		client.resume = b;
+	} else {
+		printf("Unknown setting: \"%s\".  Try \"help\".\n", arg);
 	}
 }
 
 void
-handle_ds1963s_command(char *line)
+handle_command(char *line)
 {
 	char *cmd;
 
 	if ( (cmd = strtok(line, " \t")) == NULL)
 		return;
 
-	if (!strcmp(cmd, "help")) {
-		printf("Lorem bla bla\n");
-	} else if (__cmd_is_scratchpad(cmd)) {
-		handle_scratchpad_command(NULL);
-	} else if (__cmd_is_memory(cmd)) {
-		handle_memory_command(NULL);
+	if (__cmd_is_help(cmd)) {
+		handle_help();
+	} else if (__cmd_is_set(cmd)) {
+		handle_set();
+	} else if (__cmd_is_write_scratchpad(cmd)) {
+		handle_write_scratchpad();
+	} else if (__cmd_is_read_scratchpad(cmd)) {
+		handle_read_scratchpad();
+	} else if (__cmd_is_copy_scratchpad(cmd)) {
+		handle_copy_scratchpad();
+	} else if (__cmd_is_read_memory(cmd)) {
+		handle_read_memory();
+	} else if (__cmd_is_erase_scratchpad(cmd)) {
+		handle_erase_scratchpad();
+	} else if (__cmd_is_match_scratchpad(cmd)) {
+		handle_match_scratchpad();
+	} else if (__cmd_is_read_auth_page(cmd)) {
+		handle_read_auth_page();
 	} else if (__cmd_is_compute_first_secret(cmd)) {
 		handle_compute_first_secret();
 	} else if (__cmd_is_compute_next_secret(cmd)) {
@@ -564,22 +765,8 @@ handle_ds1963s_command(char *line)
 		handle_compute_challenge();
 	} else if (__cmd_is_authenticate_host(cmd)) {
 		handle_authenticate_host();
-	}
-}
-
-void
-handle_command(char *line)
-{
-	switch (state) {
-	case STATE_DS1963S:
-		handle_ds1963s_command(line);
-		break;
-	case STATE_SCRATCHPAD:
-		handle_scratchpad_command(line);
-		break;
-	case STATE_MEMORY:
-		handle_memory_command(line);
-		break;
+	} else {
+		printf("Unknown command: \"%s\".  Try \"help\".\n", cmd);
 	}
 }
 
@@ -592,7 +779,7 @@ int main(void)
 		exit(EXIT_FAILURE);
 	}
 
-	while ( (line = readline(prompt())) != NULL) {
+	while ( (line = readline("ds1963s> ")) != NULL) {
 		if (*line != 0) {
 			add_history(line);
 			handle_command(line);

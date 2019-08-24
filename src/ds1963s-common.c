@@ -145,7 +145,7 @@ hex_decode(uint8_t *dst, const char *src, size_t n)
 		return -1;
 
 	for (i = 0; i < src_len; i++)
-		if (!isalnum(src[i]))
+		if (!isxdigit(src[i]))
 			return -1;
 
 	for (i = j = 0; i < src_len - 1 && j < n; i += 2, j++)

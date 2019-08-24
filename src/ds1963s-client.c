@@ -225,7 +225,7 @@ ds1963s_client_sp_read(ds1963s_client_t *ctx, ds1963s_client_sp_read_reply_t *re
 	bytes_read = 32 - (bytes_read & 0x1F);
 
 	/* Calculate the CRC16. */
-	crc = ds1963s_crc16(&buf[ctx->resume], bytes_read + ctx->resume + 6);
+	crc = ds1963s_crc16(&buf[ctx->resume], bytes_read + 6);
 
 	/* Copy the data we've read. */
 	reply->data_size = bytes_read;
