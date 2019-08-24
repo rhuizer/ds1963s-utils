@@ -663,7 +663,7 @@ handle_help(void)
 		       "and TA1 to 0x00.\n\n");
 		printf("- esp 0x123\n");
 		printf("  Will set all scratchpad bytes to 0xFF, TA2 to 0x01, "
-		       "and TA2 to 0x23.\n");
+		       "and TA1 to 0x23.\n");
 	} else if (__cmd_is_match_scratchpad(arg)) {
 		printf("match-scratchpad, esp <data>\n\n");
 		printf("This command will compare 20 bytes of hex encoded "
@@ -828,7 +828,39 @@ handle_help(void)
 		       "8c\n");
 		printf("  MATCH\n");
 	} else if (__cmd_is_sign_data_page(arg)) {
-		printf("This is a stub entry.\n");
+		printf("sign-data-page, sign, sdp <addr>\n\n"
+
+		       "This command will calculate a SHA-1 message "
+		       "authentication code over the full\n"
+                       "32-byte data in the page that `addr' belongs to, the "
+		       "associated secret, and 15\n"
+		       "bytes of scratchpad data from SP[8] to SP[22] "
+		       "(inclusive).  This 160-bit SHA-1\n"
+		       "MAC is then stored at SP[8] to SP[20] (inclusive).  "
+		       "TA1 and TA2 will be set to\n"
+		       "the address `addr'.\n\n"
+
+		       "The command can be used to sign data in a data page, "
+		       "and this signature can\n"
+		       "then be verified by anyone who knows the secret.\n\n"
+
+			"Example:\n"
+		        "- sdp 0\n"
+		        "  Will calculate a SHA-1 MAC over the 32-bytes in "
+			"page 0, secret 0, and the\n"
+		        "  data at SP[8] to SP[20] (inclusive).  This MAC is "
+			"stored at SP[8] to SP[20]\n"
+		        "  inclusive.  TA2 is set to 0 and TA1 is set to 0."
+			"\n\n"
+
+			"- sdp 0x13\n"
+		        "  Will calculate a SHA-1 MAC over the 32-bytes in "
+			"page 0, secret 0, and the\n"
+		        "  data at SP[8] to SP[20] (inclusive).  This MAC is "
+			"stored at SP[8] to SP[20]\n"
+		        "  inclusive.  TA2 is set to 0 and TA1 is set to 0x13."
+			"\n"
+		);
 	} else if (__cmd_is_compute_challenge(arg)) {
 		printf("This is a stub entry.\n");
 	} else if (__cmd_is_authenticate_host(arg)) {
