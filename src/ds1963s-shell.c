@@ -20,6 +20,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include <stdio.h>
+#include <getopt.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 #include "ds1963s-client.h"
@@ -860,11 +861,43 @@ handle_command(char *line)
 	}
 }
 
-int main(void)
+void
+usage(const char *progname)
 {
-	char *line;
+	fprintf(stderr, "Use as: %s [OPTION]\n",
+	        progname ? progname : "ds1963s-shell");
+	fprintf(stderr, "Available options:\n");
+	fprintf(stderr, "   -d --device=pathname  the serial device used.\n");
+	fprintf(stderr, "   -h --help             this help menu.\n");
+}
 
-	if (ds1963s_client_init(&client, DEFAULT_SERIAL_PORT) == -1) {
+static const struct option options[] = {
+	{ "device", 1, NULL, 'd' },
+	{ "help",   0, NULL, 'h' }
+};
+
+const char optstr[] = "d:h";
+
+int
+main(int argc, char **argv)
+{
+	const char *device_name;
+	char *line;
+	int   i, o;
+
+	device_name = DEFAULT_SERIAL_PORT;
+	while ( (o = getopt_long(argc, argv, optstr, options, &i)) != -1) {
+		switch (o) {
+		case 'd':
+			device_name = optarg;
+			break;
+		case 'h':
+			usage(argv[0]);
+			exit(EXIT_SUCCESS);
+		}
+	}
+
+	if (ds1963s_client_init(&client, device_name) == -1) {
 		ds1963s_client_perror(&client, "ds1963s_client_init()");
 		exit(EXIT_FAILURE);
 	}
