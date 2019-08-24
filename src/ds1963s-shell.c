@@ -546,7 +546,7 @@ handle_main_help(void)
 	printf("set                       -- Manage setting variables\n");
 	printf("help, h                   -- This help menu\n");
 
-	printf("List of memory commands:\n\n");
+	printf("\nList of memory commands:\n\n");
 	printf("write-scratchpad,     wsp -- Write data to the scratchpad\n");
 	printf("read-scratchpad,      rsp -- Read data from the scratchpad\n");
 	printf("copy-scratchpad,      csp -- Copy scratchpad data to memory\n");
@@ -670,7 +670,9 @@ handle_help(void)
 		       "data in `data' to 20 bytes on\n");
 		printf("the scratchpad starting at offset 8.  This scratchpad "
 		       "location is used by other\n");
-		printf("functions to store a 20 byte SHA-1 hash.\n\n");
+		printf("functions to store a 20 byte SHA-1 hash.\n");
+		printf("If the AUTH flag was set, the MATCH flag will be "
+		       "set.\n");
 		printf("Examples:\n\n");
 		printf("- msp 4141414141414141414142424242424242424242\n");
 		printf("  Will compare bytes at scratchpad[8] through "
@@ -786,7 +788,45 @@ handle_help(void)
 		printf("  calculated MAC 4 times.  TA2 will be set to 0, TA1 "
 		       "will be set to 0x13.\n");
 	} else if (__cmd_is_validate_data_page(arg)) {
-		printf("This is a stub entry.\n");
+		printf("validate-data-page, validate, vdp <addr>\n\n");
+
+		printf("This command will calculate a SHA-1 message "
+		       "authentication code over the full\n");
+		printf("32-byte data in the page that `addr' belongs to, "
+		       "the associated secret, and 15\n");
+		printf("bytes of scratchpad data from SP[8] to SP[22] "
+		       "(inclusive).  This 160-bit SHA-1\n");
+		printf("MAC is then stored at SP[8] to SP[20] (inclusive) and "
+		       "the HIDE flag is set.\n\n");
+
+		printf("The command can be used to validate data in a data "
+		       "page.  It is meant to be\n");
+		printf("used in combination with the match-scratchpad "
+		       "function, and can be used to\n");
+		printf("prove to the device that a secret associated with a "
+		       "data page is known.\n\n");
+
+		printf("Example:\n");
+		printf("  ds1963s> esp\n");
+		printf("  ds1963s> sdp 0\n");
+		printf("  ds1963s> rsp\n");
+		printf("  Address: 0x0000  (Page   : 0)\n");
+		printf("  TA1    : 0x00    (T07:T00: 0, 0, 0, 0, 0, 0, 0, 0)\n");
+		printf("  TA2    : 0x00    (T15:T08: 0, 0, 0, 0, 0, 0, 0, 0)\n");
+		printf("  E/S    : 0x1f\n");
+		printf("  E      : 0x1f    (E04:E00: 1, 1, 1, 1, 1)\n");
+		printf("  PF     : 0\n");
+		printf("  AA     : 0\n");
+		printf("  CRC16  : 0x33e1  (OK)\n");
+		printf("  Offset : 0       (T04:T00: 0, 0, 0, 0, 0)\n");
+		printf("  Length : 32\n");
+		printf("  Data   : ffffffffffffffff42bd425d27fb70e43df23ab8aed"
+		       "59b90d81b718cffffffff\n");
+		printf("  ds1963s> esp\n");
+		printf("  ds1963s> vdp 0\n");
+		printf("  ds1963s> msp 42bd425d27fb70e43df23ab8aed59b90d81b71"
+		       "8c\n");
+		printf("  MATCH\n");
 	} else if (__cmd_is_sign_data_page(arg)) {
 		printf("This is a stub entry.\n");
 	} else if (__cmd_is_compute_challenge(arg)) {

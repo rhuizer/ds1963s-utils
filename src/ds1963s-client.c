@@ -348,9 +348,9 @@ ds1963s_client_validate_data_page(ds1963s_client_t *ctx, int address)
 	assert(ctx != NULL);
 	assert(address >= 0 && address <= 0xFFFF);
 
-	/* Generate the secret using the SHA 0xF0 command. */
+	/* Validate the data page using the SHA 0x3C command. */
        	portnum = ctx->copr.portnum;
-	if (SHAFunction18(portnum, 0xF0, address, ctx->resume) == FALSE) {
+	if (SHAFunction18(portnum, 0x3C, address, ctx->resume) == FALSE) {
 		ctx->errno = DS1963S_ERROR_SHA_FUNCTION;
 		return -1;
 	}
