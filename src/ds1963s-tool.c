@@ -191,11 +191,11 @@ ds1963s_tool_rom_print_text(struct ds1963s_tool *tool, struct ds1963s_rom *rom)
 	printf("64-BIT LASERED ROM\n");
 	printf("------------------\n");
 	printf("Family: 0x%.2x\n", rom->family);
-	printf("Serial: ");
 
-	/* Serial number holds LSB first, so process backwards. */
-	for (i = sizeof(rom->serial) - 1; i >= 0; i--)
+	printf("Serial: ");
+	for (i = 0; i < sizeof rom->serial; i++)
 		printf("%.2x", rom->serial[i]);
+
 	printf("\nCRC8  : 0x%.2x\n", rom->crc);
 }
 
@@ -227,8 +227,8 @@ void ds1963s_tool_info_text(struct ds1963s_tool *tool)
 	struct ds1963s_rom rom;
 	uint32_t counters[16];
 
-	if (ds1963s_client_rom_get(&tool->client, &rom) != -1)
-		ds1963s_tool_rom_print_text(tool, &rom);
+	ds1963s_client_rom_get(&tool->client, &rom);
+	ds1963s_tool_rom_print_text(tool, &rom);
 
 	if (ds1963s_write_cycle_get_all(&tool->client, counters) != -1)
 		ds1963s_tool_write_cycle_counters_print_text(tool, counters);
@@ -370,8 +370,8 @@ void ds1963s_tool_info_full_text(struct ds1963s_tool *tool)
 	if (ds1963s_tool_info_full_disclaimer() == 0)
 		return;
 
-	if (ds1963s_client_rom_get(&tool->client, &rom) != -1)
-		ds1963s_tool_rom_print_text(tool, &rom);
+	ds1963s_client_rom_get(&tool->client, &rom);
+	ds1963s_tool_rom_print_text(tool, &rom);
 
 	if (ds1963s_write_cycle_get_all(&tool->client, counters) != -1)
 		ds1963s_tool_write_cycle_counters_print_text(tool, counters);

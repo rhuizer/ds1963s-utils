@@ -165,8 +165,8 @@ ds1963s_tool_rom_print_yaml(struct ds1963s_tool *tool, struct ds1963s_rom *rom)
 	__yaml_add_string(&tool->emitter, "serial");
 
 	for (int i = 0; i < sizeof(rom->serial); i++) {
-		snprintf(&buf[i * 2], sizeof(buf) - i * 2, "%.2x",
-		         rom->serial[sizeof(rom->serial) - i - 1]);
+		snprintf(&buf[i * 2], sizeof(buf) - i * 2,
+		         "%.2x", rom->serial[i]);
 	}
 	__yaml_add_string(&tool->emitter, buf);
 
@@ -237,8 +237,8 @@ __info_yaml(struct ds1963s_tool *tool, struct ds1963s_rom *rom,
 {
 	uint32_t prng;
 
-	if (ds1963s_client_rom_get(&tool->client, rom) != -1)
-		ds1963s_tool_rom_print_yaml(tool, rom);
+	ds1963s_client_rom_get(&tool->client, rom);
+	ds1963s_tool_rom_print_yaml(tool, rom);
 
 	if (ds1963s_write_cycle_get_all(&tool->client, counters) != -1)
 		ds1963s_tool_write_cycle_counters_print_yaml(tool, counters);

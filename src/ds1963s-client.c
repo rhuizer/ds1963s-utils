@@ -136,22 +136,19 @@ ds1963s_client_address_to_page(ds1963s_client_t *ctx, int address)
 	return address / 32;
 }
 
-int
+void
 ds1963s_client_rom_get(ds1963s_client_t *ctx, struct ds1963s_rom *rom)
 {
 	int portnum = ctx->copr.portnum;
-	uint8_t data[8];
 
-	owSerialNum(portnum, data, TRUE);
+	owSerialNum(portnum, rom->raw, TRUE);
 
-	if (ds1963s_crc8(data, 8) != 0)
-		return -1;
+	rom->family = rom->raw[0];
+	rom->crc    = rom->raw[7];
+	rom->crc_ok = ds1963s_crc8(rom->raw, 8) == 0;
 
-	rom->family = data[0];
-	memcpy(rom->serial, &data[1], 6);
-	rom->crc = data[7];
-
-	return 0;
+	for (int i = 0; i < 6; i++)
+		rom->serial[i] = rom->raw[6 - i];
 }
 
 int ds1963s_client_taes_print(struct ds1963s_client *ctx)
@@ -356,18 +353,6 @@ int
 ds1963s_client_authenticate_host(ds1963s_client_t *ctx, int address)
 {
 	return ds1963s_client_sha_command(ctx, 0xAA, address);
-}
-
-int ds1963s_client_serial_get(struct ds1963s_client *ctx, uint8_t serial[6])
-{
-	struct ds1963s_rom rom;
-
-	if (ds1963s_client_rom_get(ctx, &rom) == -1)
-		return -1;
-
-	memcpy(serial, rom.serial, 6);
-
-	return 0;
 }
 
 int

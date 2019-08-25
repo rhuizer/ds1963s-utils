@@ -76,12 +76,13 @@ typedef struct
 	int		crc_ok;
 } ds1963s_client_read_auth_page_reply_t;
 
-struct ds1963s_rom
-{
+typedef struct ds1963s_rom {
+	uint8_t		raw[8];
 	uint8_t		family;
 	uint8_t		serial[6];
 	uint8_t		crc;
-};
+	int		crc_ok;
+} ds1963s_rom_t;
 
 #ifdef __cplusplus
 extern "C" {
@@ -110,10 +111,9 @@ int ds1963s_client_sign_data_page(ds1963s_client_t *ctx, int address);
 int ds1963s_client_compute_challenge(ds1963s_client_t *ctx, int address);
 int ds1963s_client_authenticate_host(ds1963s_client_t *ctx, int address);
 
-int ds1963s_client_rom_get(struct ds1963s_client *ctx, struct ds1963s_rom *rom);
-int ds1963s_client_serial_get(struct ds1963s_client *ctx, uint8_t buf[6]);
-int ds1963s_client_taes_get(struct ds1963s_client *ctx, uint16_t *addr, uint8_t *es);
-int ds1963s_client_taes_print(struct ds1963s_client *ctx);
+void ds1963s_client_rom_get(ds1963s_client_t *, ds1963s_rom_t *);
+int  ds1963s_client_taes_get(struct ds1963s_client *ctx, uint16_t *addr, uint8_t *es);
+int  ds1963s_client_taes_print(struct ds1963s_client *ctx);
 void ds1963s_client_hash_print(uint8_t hash[20]);
 
 int ds1963s_client_memory_read(struct ds1963s_client *ctx, uint16_t address,

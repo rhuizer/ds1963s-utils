@@ -40,6 +40,14 @@ __cmd_is_help(const char *cmd)
 }
 
 static int
+__cmd_is_rom(const char *cmd)
+{
+	if (cmd[0] != 'r') return 0;
+	if (!strcmp(cmd, "rom")) return 1;
+	return 0;
+}
+
+static int
 __cmd_is_set(const char *cmd)
 {
 	if (cmd[0] != 's') return 0;
@@ -593,6 +601,7 @@ void
 handle_main_help(void)
 {
 	printf("List of commands:\n\n");
+	printf("rom                       -- Lists the ROM serial\n");
 	printf("set                       -- Manage setting variables\n");
 	printf("help, h                   -- This help menu\n");
 
@@ -963,6 +972,28 @@ handle_help(void)
 }
 
 void
+handle_rom(void)
+{
+        ds1963s_rom_t rom;
+
+        ds1963s_client_rom_get(&client, &rom);
+
+	printf("Data  : ");
+	for (int i = 0; i < sizeof rom.raw; i++)
+		printf("%.2x", rom.raw[i]);
+	printf("\n");
+
+	printf("Family: 0x%.2x\n", rom.family);
+
+	printf("Serial: ");
+	for (int i = 0; i < sizeof rom.serial; i++)
+		printf("%.2x", rom.serial[i]);
+	printf("\n");
+
+	printf("CRC8  : 0x%.2x  (%s)\n", rom.crc, rom.crc_ok ? "OK" : "WRONG");
+}
+
+void
 handle_set(void)
 {
 	char *arg;
@@ -992,6 +1023,8 @@ handle_command(char *line)
 
 	if (__cmd_is_help(cmd)) {
 		handle_help();
+	} else if (__cmd_is_rom(cmd)) {
+		handle_rom();
 	} else if (__cmd_is_set(cmd)) {
 		handle_set();
 	} else if (__cmd_is_write_scratchpad(cmd)) {

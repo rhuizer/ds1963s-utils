@@ -938,7 +938,7 @@ ds1963s_dev_memory_command_match_scratchpad(struct ds1963s_device *dev)
 
 	for (int i = 0; i < 20; i++) {
 		buf[i] = DS1963S_RX_BYTE(dev);
-		crc16 = ds1963s_crc16_update_byte(crc16, buf[i]);
+		crc16  = ds1963s_crc16_update_byte(crc16, buf[i]);
 	}
 
 	/* XXX: datasheet seems to state this is independent of the comparison
