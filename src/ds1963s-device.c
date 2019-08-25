@@ -559,6 +559,59 @@ ds1963s_dev_compute_challenge(struct ds1963s_device *dev)
 }
 
 int
+ds1963s_dev_authenticate_host(struct ds1963s_device *dev)
+{
+	uint8_t  M[64];
+	int      page;
+	SHA1_CTX ctx;
+
+	assert(dev != NULL);
+
+	dev->M     = 0;
+	dev->X     = 1;
+	dev->HIDE  = 1;
+	dev->MATCH = 0;
+
+	page = ds1963s_dev_page_get(dev);
+
+	__sha1_get_input_1(
+		M,
+		&dev->secret_memory[(page % 8) * 8],
+		&dev->memory[page * 32],
+		__mpx_get(dev->M, dev->X, dev->scratchpad),
+		dev->scratchpad
+	);
+
+	/* We omit the finalize, as the DS1963S does not use it, but rather
+	 * uses the internal state A, B, C, D, E for the result.  This also
+	 * means we have to subtract the initial state from the context, as
+	 * it has added these to the results.
+	 */
+	SHA1_Init(&ctx);
+	SHA1_Update(&ctx, M, sizeof M);
+
+	/* Write the results to the scratchpad. */
+	__sha1_get_output_1(
+		dev->scratchpad,
+		ctx.state[0] - 0x67452301,
+		ctx.state[1] - 0xEFCDAB89,
+		ctx.state[2] - 0x98BADCFE,
+		ctx.state[3] - 0x10325476,
+		ctx.state[4] - 0xC3D2E1F0
+	);
+
+	dev->prng_counter++;
+
+	if (dev->CHLG == 1) {
+		/* XXX: FIXME */
+		dev->AUTH = 1;
+		dev->CHLG = 0;
+	}
+
+	return 0;
+}
+
+int
 ds1963s_dev_validate_data_page(struct ds1963s_device *dev)
 {
 	assert(dev != NULL);
@@ -768,6 +821,19 @@ ds1963s_dev_sha_command_compute_challenge(struct ds1963s_device *dev)
 }
 
 int
+ds1963s_dev_sha_command_authenticate_host(struct ds1963s_device *dev)
+{
+	if (ds1963s_dev_authenticate_host(dev) == -1)
+		DS1963S_TX_FAIL(dev);
+
+	/* XXX: Investigate how many 1s to send later. */
+	for (int i = 0; i < 10; i++)
+		DS1963S_TX_BIT(dev, 1);
+
+	DS1963S_TX_SUCCESS(dev);
+}
+
+int
 ds1963s_dev_memory_command_compute_sha(struct ds1963s_device *dev)
 {
 	uint16_t crc16;
@@ -808,11 +874,10 @@ ds1963s_dev_memory_command_compute_sha(struct ds1963s_device *dev)
 		break;
 	case 0xAA:
 		DEBUG_LOG("[ds1963s|SHA] Authenticate Host\n");
-//		ds1963s_dev_sha_command_authenticate_host(dev);
+		ds1963s_dev_sha_command_authenticate_host(dev);
 		break;
 	default:
 		DEBUG_LOG("[ds1963s|SHA] Unknown command %.2x\n", ctrl);
-		abort();
 		break;
 	}
 
