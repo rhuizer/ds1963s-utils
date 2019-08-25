@@ -46,7 +46,7 @@ struct ds1963s_device
 			uint8_t		scratchpad[32];
 			uint32_t	data_wc[8];
 			uint32_t	secret_wc[8];
-			uint32_t	prng;
+			uint32_t	prng_counter;
 		};
 	};
 

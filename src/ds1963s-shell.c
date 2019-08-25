@@ -253,6 +253,12 @@ address_get(const char *function, int *address)
 		return -1;
 	}
 
+	if (!strcmp(s, "pctr") || !strcmp(s, "prng") ||
+	    !strcmp(s, "PRNG")) {
+		*address = 0x2a0;
+		return 0;
+	}
+
 	if (parse_uint(s, &_address) == -1)
 		return -1;
 
@@ -419,16 +425,12 @@ handle_write_scratchpad(void)
 void
 handle_read_memory(void)
 {
-	unsigned int address, size;
 	uint8_t      buf[157];
+	int          address;
+	unsigned int size;
 	char *       s;
 
-	if ( (s = strtok(NULL, " \t")) == NULL) {
-		printf("read expects an address\n");
-		return;
-	}
-
-	if (parse_uint(s, &address) == -1)
+	if (address_get("read-memory", &address) == -1)
 		return;
 
 	if ( (s = strtok(NULL, " \t")) == NULL) {
