@@ -173,7 +173,7 @@ SMALLINT OpenCOM(int portnum, const char *port_zstr)
    OWASSERT( portnum<MAX_PORTNUM && portnum>=0 && !fd[portnum],
              OWERROR_PORTNUM_ERROR, FALSE );
 
-   fd[portnum] = open(port_zstr, O_RDWR|O_NONBLOCK);
+   fd[portnum] = open(port_zstr, O_RDWR);
    if (fd[portnum]<0)
    {
       OWERROR(OWERROR_GET_SYSTEM_RESOURCE_FAILED);
@@ -274,28 +274,11 @@ SMALLINT WriteCOM(int portnum, int outlen, uchar *outbuf)
 //
 int ReadCOM(int portnum, int inlen, uchar *inbuf)
 {
-   fd_set         filedescr;
-   struct timeval tval;
-   int            cnt;
-
    // loop to wait until each byte is available and read it
-   for (cnt = 0; cnt < inlen; cnt++)
+   for (int cnt = 0; cnt < inlen; cnt++)
    {
-      // set a descriptor to wait for a character available
-      FD_ZERO(&filedescr);
-      FD_SET(fd[portnum],&filedescr);
-      // set timeout to 10ms
-      tval.tv_sec = 0;
-      tval.tv_usec = 10000;
-
-      // if byte available read or return bytes read
-      if (select(fd[portnum]+1,&filedescr,NULL,NULL,&tval) != 0)
-      {
          if (read(fd[portnum],&inbuf[cnt],1) != 1)
             return cnt;
-      }
-      else
-         return cnt;
    }
 
    // success, so return desired length
