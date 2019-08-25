@@ -1091,6 +1091,28 @@ static const struct option options[] = {
 
 const char optstr[] = "d:h";
 
+const char banner[] =
+"`7MM\"\"\"Yb.    .M\"\"\"bgd                  .6*\"            .M\"\"\"bgd\n"
+"  MM    `Yb. ,MI    \"Y __,            ,M'              ,MI    \"Y\n"
+"  MM     `Mb `MMb.    `7MM  .d*\"*bg. ,Mbmmm.   pd\"\"b.  `MMb.\n"
+"  MM      MM   `YMMNq.  MM 6MP    Mb 6M'  `Mb.(O)  `8b   `YMMNq.\n"
+"  MM     ,MP .     `MM  MM YMb    MM MI     M8     ,89 .     `MM\n"
+"  MM    ,dP' Mb     dM  MM  `MbmmdM9 WM.   ,M9   \"\"Yb. Mb     dM\n"
+".JMMmmmdP'   P\"Ybmmd\" .JMML.     .M'  WMbmmd9       88 P\"Ybmmd\"\n"
+"                               .d9            (O)  .M'\n"
+"                             m\"'               bmmmd'\n"
+"\n"
+"     .M\"\"\"bgd `7MMF'  `7MMF'`7MM\"\"\"YMM  `7MMF'      `7MMF'\n"
+"    ,MI    \"Y   MM      MM    MM    `7    MM          MM\n"
+"    `MMb.       MM      MM    MM   d      MM          MM\n"
+"      `YMMNq.   MMmmmmmmMM    MMmmMM      MM          MM\n"
+"    .     `MM   MM      MM    MM   Y  ,   MM      ,   MM      ,\n"
+"    Mb     dM   MM      MM    MM     ,M   MM     ,M   MM     ,M\n"
+"    P\"Ybmmd\"  .JMML.  .JMML..JMMmmmmMMM .JMMmmmmMMM .JMMmmmmMMM\n"
+"\n"
+"                           For Yuzu\n"
+"                       By Ronald Huizer\n\n";
+
 int
 main(int argc, char **argv)
 {
@@ -1109,6 +1131,8 @@ main(int argc, char **argv)
 			exit(EXIT_SUCCESS);
 		}
 	}
+
+	printf("\n%s", banner);
 
 	if (ds1963s_client_init(&client, device_name) == -1) {
 		ds1963s_client_perror(&client, "ds1963s_client_init()");
