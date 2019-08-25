@@ -24,6 +24,11 @@
 #include <string.h>
 #include "1-wire-bus.h"
 
+#ifndef DEBUG_BUS
+#undef DEBUG_LOG
+#define DEBUG_LOG(x, ...)
+#endif
+
 static inline int
 __one_wire_bus_cycle(struct one_wire_bus *bus)
 {
