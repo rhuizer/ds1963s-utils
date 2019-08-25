@@ -333,7 +333,7 @@ ds1963s_tool_secrets_get(struct ds1963s_tool *tool,
 		);
 	}
 
-	memcpy(tool->brute.dev.serial, rom->serial, 6);
+	memcpy(tool->brute.dev.serial, &rom->raw[1], 6);
 	memcpy(tool->brute.dev.data_memory, buf, sizeof buf);
 
 	/* Initialize the write cycle counters. */
@@ -601,7 +601,6 @@ ds1963s_tool_read_auth(struct ds1963s_tool *tool, int page, size_t size)
 void
 ds1963s_tool_sign(struct ds1963s_tool *tool, int page, size_t size)
 {
-	ds1963s_client_sp_read_reply_t reply;
 	struct ds1963s_client *ctx;
 	unsigned char hash[20];
 	int addr;
