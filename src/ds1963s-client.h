@@ -26,6 +26,7 @@
 #include "ibutton/shaib.h"
 #include "ds1963s-error.h"
 
+#define DS1963S_HASH_SIZE		20
 #define DS1963S_PAGE_SIZE		32
 #define DS1963S_SCRATCHPAD_SIZE		32
 #define DS1963S_SERIAL_SIZE		6

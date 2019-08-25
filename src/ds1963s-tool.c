@@ -49,20 +49,23 @@
 #define FORMAT_TEXT			1
 #define FORMAT_YAML			2
 
-int ds1963s_tool_init(struct ds1963s_tool *tool, const char *device)
+int
+ds1963s_tool_init(struct ds1963s_tool *tool, const char *device)
 {
 	memset(tool, 0, sizeof *tool);
 	ds1963s_dev_init(&tool->brute.dev);
 	return ds1963s_client_init(&tool->client, device);
 }
 
-void ds1963s_tool_destroy(struct ds1963s_tool *tool)
+void
+ds1963s_tool_destroy(struct ds1963s_tool *tool)
 {
 	ds1963s_dev_destroy(&tool->brute.dev);
 	ds1963s_client_destroy(&tool->client);
 }
 
-void ds1963s_tool_fatal(struct ds1963s_tool *tool)
+void
+ds1963s_tool_fatal(struct ds1963s_tool *tool)
 {
 	ds1963s_tool_destroy(tool);
 	exit(EXIT_FAILURE);
@@ -119,7 +122,8 @@ ds1963s_tool_secret_hmac_target_get(
 	return 0;
 }
 
-void *ds1963s_tool_brute_link(struct ds1963s_tool *tool, int secret, int link)
+void *
+ds1963s_tool_brute_link(struct ds1963s_tool *tool, int secret, int link)
 {
 	struct ds1963s_brute_secret *secret_state;
 	struct ds1963s_brute *brute;
@@ -222,7 +226,8 @@ ds1963s_tool_write_cycle_counters_print_text(struct ds1963s_tool *tool, uint32_t
 	printf("Secret     7: 0x%.8x\n", counters[15]);
 }
 
-void ds1963s_tool_info_text(struct ds1963s_tool *tool)
+void
+ds1963s_tool_info_text(struct ds1963s_tool *tool)
 {
 	struct ds1963s_rom rom;
 	uint32_t counters[16];
@@ -241,7 +246,8 @@ void ds1963s_tool_info_text(struct ds1963s_tool *tool)
 		ds1963s_client_prng_get(&tool->client));
 }
 
-void ds1963s_tool_info(struct ds1963s_tool *tool, int format)
+void
+ds1963s_tool_info(struct ds1963s_tool *tool, int format)
 {
 #ifdef HAVE_LIBYAML
 	if (format == FORMAT_YAML)
@@ -251,7 +257,8 @@ void ds1963s_tool_info(struct ds1963s_tool *tool, int format)
 		ds1963s_tool_info_text(tool);
 }
 
-int ds1963s_tool_info_full_disclaimer(void)
+int
+ds1963s_tool_info_full_disclaimer(void)
 {
 	int ch;
 
@@ -265,7 +272,8 @@ int ds1963s_tool_info_full_disclaimer(void)
 	return ch == 'y' || ch == 'Y';
 }
 
-void xds1963s_tool_secret_hmac_target_get(
+void
+xds1963s_tool_secret_hmac_target_get(
 	struct ds1963s_tool *tool,
 	int secret,
 	int link)
@@ -362,13 +370,11 @@ ds1963s_tool_secrets_get(struct ds1963s_tool *tool,
         }
 }
 
-void ds1963s_tool_info_full_text(struct ds1963s_tool *tool)
+void
+ds1963s_tool_info_full_text(struct ds1963s_tool *tool)
 {
 	struct ds1963s_rom rom;
 	uint32_t counters[16];
-
-	if (ds1963s_tool_info_full_disclaimer() == 0)
-		return;
 
 	ds1963s_client_rom_get(&tool->client, &rom);
 	ds1963s_tool_rom_print_text(tool, &rom);
@@ -396,8 +402,12 @@ void ds1963s_tool_info_full_text(struct ds1963s_tool *tool)
 	}
 }
 
-void ds1963s_tool_info_full(struct ds1963s_tool *tool, int format)
+void
+ds1963s_tool_info_full(struct ds1963s_tool *tool, int format)
 {
+	if (ds1963s_tool_info_full_disclaimer() == 0)
+		return;
+
 #ifdef HAVE_LIBYAML
 	if (format == FORMAT_YAML)
 		ds1963s_tool_info_full_yaml(tool);
@@ -406,8 +416,9 @@ void ds1963s_tool_info_full(struct ds1963s_tool *tool, int format)
 		ds1963s_tool_info_full_text(tool);
 }
 
-void ds1963s_tool_write(struct ds1963s_tool *tool, uint16_t address,
-                        const uint8_t *data, size_t len)
+void
+ds1963s_tool_write(struct ds1963s_tool *tool, uint16_t address,
+                   const uint8_t *data, size_t len)
 {
 	struct ds1963s_client *ctx = &tool->client;
 
@@ -417,8 +428,9 @@ void ds1963s_tool_write(struct ds1963s_tool *tool, uint16_t address,
 	}
 }
 
-void ds1963s_tool_secret_write(struct ds1963s_tool *tool, int secret,
-                               const uint8_t *data, size_t len)
+void
+ds1963s_tool_secret_write(struct ds1963s_tool *tool, int secret,
+                          const uint8_t *data, size_t len)
 {
 	struct ds1963s_client *ctx = &tool->client;
 
@@ -589,9 +601,14 @@ ds1963s_tool_read_auth(struct ds1963s_tool *tool, int page, size_t size)
 void
 ds1963s_tool_sign(struct ds1963s_tool *tool, int page, size_t size)
 {
-	struct ds1963s_client *ctx = &tool->client;
+	ds1963s_client_sp_read_reply_t reply;
+	struct ds1963s_client *ctx;
 	unsigned char hash[20];
 	int addr;
+
+	assert(tool != NULL);
+
+	ctx = &tool->client;
 
 	if ( (addr = ds1963s_client_page_to_address(ctx, page)) == -1) {
 		ds1963s_client_perror(ctx, NULL);
@@ -612,13 +629,19 @@ ds1963s_tool_sign(struct ds1963s_tool *tool, int page, size_t size)
 		ds1963s_tool_fatal(tool);
 	}
 
+	if (ds1963s_client_hash_read(&tool->client, hash) == -1) {
+		ds1963s_client_perror(ctx, "ds1963s_client_hash_read()");
+		ds1963s_tool_fatal(tool);
+	}
+
 	printf("Sign data page #%.2d\n", page);
 	printf("---------------------------\n");
-	printf("SHA1 hash: TODO");
-//	ds1963s_client_hash_print(hash);
+	printf("SHA1 hash: ");
+	ds1963s_client_hash_print(hash);
 }
 
-void usage(const char *progname)
+void
+usage(const char *progname)
 {
 	fprintf(stderr, "Usage: %s [OPTION] [DATA]\n",
 		progname ? progname : "ds1963s-tool");
@@ -637,7 +660,7 @@ void usage(const char *progname)
 	fprintf(stderr, "   -t --read-auth=size      read 'size' bytes of "
 	                "authenticated data.\n");
 	fprintf(stderr, "   -s --sign-data=size      sign 'size' bytes of data.\n");
-	fprintf(stderr, "   -w --write               write data.\n");
+	fprintf(stderr, "   -w --write=hex_data      write data.\n");
 	fprintf(stderr, "   --secret-set-first=n     compute first secret and write it to secret 'n'.\n");
 	fprintf(stderr, "   --secret-set-next=n      compute next secret and write it to secret 'n'.\n");
 	fprintf(stderr, "   --write-secret=n         write data to secret 'n'.\n");
@@ -664,7 +687,8 @@ static const struct option options[] =
 
 const char optstr[] = "a:d:hr:p:s:ifwy";
 
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
 	const char *device_name = DEFAULT_SERIAL_PORT;
 	struct ds1963s_tool tool;
@@ -744,6 +768,11 @@ int main(int argc, char **argv)
 			format = FORMAT_YAML;
 			break;
 		}
+	}
+
+	if (mode == 0) {
+		usage(argv[0]);
+		exit(EXIT_FAILURE);
 	}
 
 	/* Verify that the options we have processed make sense. */

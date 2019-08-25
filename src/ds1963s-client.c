@@ -195,6 +195,27 @@ ds1963s_client_taes_get(struct ds1963s_client *ctx, uint16_t *addr, uint8_t *es)
 }
 
 int
+ds1963s_client_hash_read(ds1963s_client_t *ctx, uint8_t h[DS1963S_HASH_SIZE])
+{
+	ds1963s_client_sp_read_reply_t reply;
+
+	if (ds1963s_client_sp_read(ctx, &reply) == -1)
+		return -1;
+
+	if (reply.crc_ok == 0)
+		return -1;
+
+	if (reply.data_size != 32) {
+		ctx->errno = DS1963S_ERROR_DATA_LEN;
+		return -1;
+	}
+
+	memcpy(h, &reply.data[8], DS1963S_HASH_SIZE);
+
+	return 0;
+}
+
+int
 ds1963s_client_sp_read(ds1963s_client_t *ctx, ds1963s_client_sp_read_reply_t *reply)
 {
 	int portnum = ctx->copr.portnum;
@@ -234,6 +255,13 @@ ds1963s_client_sp_read(ds1963s_client_t *ctx, ds1963s_client_sp_read_reply_t *re
 	reply->es     = buf[ctx->resume + 3];
 	reply->crc16  = ~GET_16BIT_MSB(&buf[bytes_read + 4 + ctx->resume]);
 	reply->crc_ok = crc == 0xB001;
+
+	/* This is not a hard error because the client may be interested in
+	 * the reply regardless of the checksum, but we flag the error here
+	 * in case the client handles it.
+	 */
+	if (reply->crc_ok == 0)
+		ctx->errno = DS1963S_ERROR_INTEGRITY;
 
 	/* Return the number of bytes read. */
 	return bytes_read;
@@ -712,27 +740,6 @@ int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
 		ctx->errno = DS1963S_ERROR_SP_COPY;
 		return -1;
 	}
-
-	return 0;
-}
-
-/* Read back the SHA-1 from the scratchpad as output by the following commands:
- * - Sign data page
- * - Validate data page
- */
-int
-ds1963s_client_hash_read(struct ds1963s_client *ctx, uint8_t hash[20])
-{
-	SHACopr *copr = &ctx->copr;
-	uint8_t scratchpad[32];
-
-	if (ReadScratchpadSHA18(copr->portnum, 0, 0, scratchpad, 0) == -1) {
-		ctx->errno = DS1963S_ERROR_READ_SCRATCHPAD;
-		return -1;
-	}
-
-	for (int i = 0; i < 20; i++)
-		hash[i] = scratchpad[i + 8];
 
 	return 0;
 }
