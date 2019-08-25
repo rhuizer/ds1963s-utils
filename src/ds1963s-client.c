@@ -688,7 +688,7 @@ int ds1963s_client_secret_write(struct ds1963s_client *ctx, int secret,
 		return -1;
 	}
 
-	if (len > 8) {
+	if (len > 32) {
 		ctx->errno = DS1963S_ERROR_SECRET_LEN;
 		return -1;
 	}
