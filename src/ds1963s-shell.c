@@ -251,6 +251,21 @@ bool_get(const char *function, int *value)
 }
 
 static int
+address_symbolic_get(const char *s)
+{
+	if (!strcmp(s, "pctr") || !strcmp(s, "prng") ||
+	    !strcmp(s, "PRNG")) {
+		return 0x2a0;
+	} else if (!strcmp(s, "hash")) {
+		return 0x248;
+	} else if (!strcmp(s, "sp") || !strcmp(s, "scratchpad")) {
+		return 0x240;
+	}
+
+	return -1;
+}
+
+static int
 address_get(const char *function, int *address)
 {
 	unsigned int _address;
@@ -261,9 +276,8 @@ address_get(const char *function, int *address)
 		return -1;
 	}
 
-	if (!strcmp(s, "pctr") || !strcmp(s, "prng") ||
-	    !strcmp(s, "PRNG")) {
-		*address = 0x2a0;
+	if ( (_address = address_symbolic_get(s)) != -1) {
+		*address = _address;
 		return 0;
 	}
 
