@@ -322,6 +322,7 @@ ds1963s_tool_secrets_get(struct ds1963s_tool *tool,
                          uint32_t counters[16])
 {
 	uint8_t buf[256];
+	uint8_t data[32];
 
 	/* Initialize the brute forcer state. */
 	for (int i = 0; i < 8; i++) {
@@ -342,32 +343,46 @@ ds1963s_tool_secrets_get(struct ds1963s_tool *tool,
 		tool->brute.dev.secret_wc[i] = counters[i + 8];
 	}
 
-	fprintf(stderr, "\n01. Calculating HMAC links.\n");
+	if (tool->verbose)
+		fprintf(stderr, "\n01. Calculating HMAC links.\n");
+
 	for (int secret = 0; secret < 8; secret++) {
 		for (int link = 0; link < 4; link++) {
-			fprintf(stderr, "\r    Secret #%d [%d/4]", secret, link);
+			if (tool->verbose) {
+				fprintf(stderr, "\r    Secret #%d [%d/4]",
+				        secret, link);
+			}
+
 			xds1963s_tool_secret_hmac_target_get(tool, secret, link);
 		}
-		fprintf(stderr, "\r    Secret #%d [4/4]\n", secret);
+
+		if (tool->verbose)
+			fprintf(stderr, "\r    Secret #%d [4/4]\n", secret);
 	}
 
-	fprintf(stderr, "02. Calculating secrets from HMAC links.\n");
+	if (tool->verbose)
+		fprintf(stderr, "02. Calculating secrets from HMAC links.\n");
+
 	for (int secret = 0; secret < 8; secret++) {
 		for (int link = 3; link >= 0; link--)
 			ds1963s_tool_brute_link(tool, secret, link);
 	}
 
-	fprintf(stderr, "03. Restoring recovered keys.\n");
+	if (tool->verbose) {
+		fprintf(stderr, "03. Restoring recovered keys.\n");
+		fprintf(stderr, "    Secret #0-3\n");
+	}
 
-	for (int secret = 0; secret < 8; secret++) {
-		fprintf(stderr, "    Secret #%d\n", secret);
-        	xds1963s_client_secret_write(
-			tool,
-			secret,
-			tool->brute.secrets[secret].secret,
-			8
-		);
-        }
+	for (int i = 0; i < 4; i++)
+		memcpy(&data[i * 8], tool->brute.secrets[i].secret, 8);
+	xds1963s_client_secret_write(tool, 0, data, sizeof data);
+
+	if (tool->verbose)
+		fprintf(stderr, "    Secret #4-7\n");
+
+	for (int i = 0; i < 4; i++)
+		memcpy(&data[i * 8], tool->brute.secrets[i + 4].secret, 8);
+	xds1963s_client_secret_write(tool, 4, data, sizeof data);
 }
 
 void
@@ -648,9 +663,10 @@ usage(const char *progname)
 	fprintf(stderr, "Modifiers can be used for several commands.\n");
 	fprintf(stderr, "   -a --address=address  the memory address used "
 	                "in several functions.\n");
+	fprintf(stderr, "   -d --device=pathname  the serial device used.\n");
 	fprintf(stderr, "   -p --page=pagenum     the page number used in "
 	                "several functions.\n");
-	fprintf(stderr, "   -d --device=pathname  the serial device used.\n");
+	fprintf(stderr, "   -v --verbose          verbose operation.\n");
 
 	fprintf(stderr, "\nFunction that will be performed.\n");
 	fprintf(stderr, "   -i --info                print ibutton information.\n");
@@ -679,12 +695,13 @@ static const struct option options[] =
 	{ "secret-set-next",      1,    NULL,    0  },
 	{ "sign-data",		  1,	NULL,	's' },
 	{ "validate",		  0,	NULL,	 0  },
+	{ "verbose",              0,    NULL,   'v' },
 	{ "write",		  0,	NULL,	'w' },
 	{ "write-secret",	  1,	NULL,	 0  },
 	{ NULL,			  0,	NULL,	 0  }
 };
 
-const char optstr[] = "a:d:hr:p:s:ifwy";
+const char optstr[] = "a:d:hr:p:s:ifvwy";
 
 int
 main(int argc, char **argv)
@@ -694,12 +711,13 @@ main(int argc, char **argv)
 	int address, page, size;
 	int mask, mode, o;
 	uint8_t data[32];
+	int verbose;
 	size_t len;
 	int format;
 	int secret;
 	int i;
 
-	len = mode = 0;
+	len = mode = verbose = 0;
 	format = FORMAT_TEXT;
 	address = page = secret = size = -1;
 	while ( (o = getopt_long(argc, argv, optstr, options, &i)) != -1) {
@@ -759,6 +777,9 @@ main(int argc, char **argv)
 			break;
 		case 't':
 			mode = MODE_READ_AUTH;
+			break;
+		case 'v':
+			verbose = 1;
 			break;
 		case 'w':
 			mode = MODE_WRITE;
@@ -826,6 +847,7 @@ main(int argc, char **argv)
 		ds1963s_client_perror(&tool.client, "ds1963s_init()");
 		exit(EXIT_FAILURE);
 	}
+	tool.verbose = verbose;
 
 	switch (mode) {
 	case MODE_INFO:

@@ -31,6 +31,8 @@ struct ds1963s_tool
 	/* Side-channel module used for dumping secrets. */
 	struct ds1963s_brute brute;
 
+	int verbose;
+
 #ifdef HAVE_LIBYAML
 	yaml_emitter_t	emitter;
 #endif
