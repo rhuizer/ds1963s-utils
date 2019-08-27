@@ -37,6 +37,9 @@
 		if (v == ONE_WIRE_BUS_SIGNAL_RESET) {			\
 			__ds1963s_dev_do_reset_pulse(dev);		\
 			return ONE_WIRE_BUS_SIGNAL_RESET;		\
+		} else if (v == ONE_WIRE_BUS_SIGNAL_TERMINATE) {	\
+			dev->state = DS1963S_STATE_TERMINATED;		\
+			return ONE_WIRE_BUS_SIGNAL_TERMINATE;		\
 		}							\
 									\
 		v;							\
@@ -50,6 +53,9 @@
 		if (v == ONE_WIRE_BUS_SIGNAL_RESET) {			\
 			__ds1963s_dev_do_reset_pulse(dev);		\
 			return ONE_WIRE_BUS_SIGNAL_RESET;		\
+		} else if (v == ONE_WIRE_BUS_SIGNAL_TERMINATE) {	\
+			dev->state = DS1963S_STATE_TERMINATED;		\
+			return ONE_WIRE_BUS_SIGNAL_TERMINATE;		\
 		}							\
 									\
 		v;							\
@@ -1167,7 +1173,7 @@ int ds1963s_dev_power_on(struct ds1963s_device *dev)
 {
         assert(dev != NULL);
 
-	while (1) {
+	while (dev->state != DS1963S_STATE_TERMINATED) {
 		switch(dev->state) {
 		case DS1963S_STATE_INITIAL:
 			DEBUG_LOG("[ds1963s|INITIAL] power on\n");

@@ -28,6 +28,7 @@
 #include "list.h"
 
 /* Do not redefine these three, it will break things. */
+#define ONE_WIRE_BUS_SIGNAL_TERMINATE	-2
 #define ONE_WIRE_BUS_SIGNAL_RESET	-1
 #define ONE_WIRE_BUS_SIGNAL_ZERO	0
 #define ONE_WIRE_BUS_SIGNAL_ONE		1
@@ -36,12 +37,19 @@
 #define ONE_WIRE_BUS_ACCESS_READ	1
 #define ONE_WIRE_BUS_ACCESS_WRITE	2
 
+#define ONE_WIRE_BUS_STATE_RUNNING	0
+#define ONE_WIRE_BUS_STATE_TERMINATED	1
+
+#define ONE_WIRE_BUS_MEMBER_MASTER	0
+#define ONE_WIRE_BUS_MEMBER_SLAVE	1
+
 struct one_wire_bus;
 
 typedef void (*bus_device_driver_t)(void *);
 
 struct one_wire_bus_member
 {
+	int                  type;
 	struct coroutine     coro;
 	struct one_wire_bus *bus;
 	struct list_head     list_entry;
@@ -55,6 +63,7 @@ struct one_wire_bus_member
 
 struct one_wire_bus
 {
+	int              state;
 	struct list_head members;
 	struct coroutine coro;
 	int              signal;

@@ -141,6 +141,8 @@ void ds2480b_dev_init(struct ds2480b_device *dev)
 	dev->config.baudrate         = DS2480_PARAM_BAUDRATE_VALUE_9600;
 
 	one_wire_bus_member_init(&dev->bus_master);
+	one_wire_bus_member_master_set(&dev->bus_master);
+
 	dev->bus_master.device = (void *)dev;
 	dev->bus_master.driver = (void(*)(void *))ds2480b_dev_power_on;
 #ifdef DEBUG
