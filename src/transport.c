@@ -20,6 +20,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include <assert.h>
+#include <stdlib.h>
 #include "transport.h"
 
 int transport_destroy(struct transport *t)
@@ -29,7 +30,13 @@ int transport_destroy(struct transport *t)
 		return -1;
 	}
 
-	return t->t_ops->destroy(t);
+	if (t->t_ops->destroy(t) == -1) {
+		t->error = TRANSPORT_ERROR_DESTROY;
+		return -1;
+	}
+
+	free(t);
+	return 0;
 }
 
 ssize_t transport_read(struct transport *t, void *buf, size_t size)

@@ -26,6 +26,7 @@
 
 #define TRANSPORT_ERROR_NONE		0
 #define TRANSPORT_ERROR_UNSUPPORTED	1
+#define TRANSPORT_ERROR_DESTROY		2
 
 struct transport;
 
