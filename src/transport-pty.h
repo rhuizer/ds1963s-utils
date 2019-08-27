@@ -1,6 +1,6 @@
-/* transport-factory.c
+/* transport-pty.h
  *
- * A factory for transport layer instances.
+ * Transport layer UNIX socket implementation.
  *
  * Dedicated to Yuzuyu Arielle Huizer.
  *
@@ -19,39 +19,27 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#include <string.h>
-#include "transport-factory.h"
-#include "transport-pty.h"
-#include "transport-unix.h"
+#ifndef __TRANSPORT_PTY_H
+#define __TRANSPORT_PTY_H
 
-struct transport *
-transport_factory_new(int type)
+#include <stddef.h>
+#include "transport.h"
+
+struct transport_pty_data
 {
-	struct transport *t = NULL;
+	int	fd;
+	char *	pathname_slave;
+};
 
-	switch (type) {
-	case TRANSPORT_PTY:
-		t = transport_pty_new();
-		break;
-	case TRANSPORT_UNIX:
-		t = transport_unix_new();
-		break;
-	}
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-	if (t != NULL)
-		t->type = type;
+int               transport_pty_init(struct transport *t);
+struct transport *transport_pty_new(void);
 
-	return t;
-}
+#ifdef __cplusplus
+};
+#endif
 
-struct transport *
-transport_factory_new_by_name(const char *name)
-{
-	if (!strcmp(name, "pty"))
-		return transport_factory_new(TRANSPORT_PTY);
-
-	if (!strcmp(name, "unix"))
-		return transport_factory_new(TRANSPORT_UNIX);
-
-	return NULL;
-}
+#endif

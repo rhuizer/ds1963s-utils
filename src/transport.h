@@ -38,7 +38,8 @@ struct transport_operations
 
 struct transport
 {
-	int error;
+	int   error;
+	int   type;
 	void *private_data;
 	struct transport_operations *t_ops;
 };

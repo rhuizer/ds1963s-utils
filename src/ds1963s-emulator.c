@@ -26,6 +26,7 @@
 #include "ds1963s-device.h"
 #include "ds2480b-device.h"
 #include "transport-factory.h"
+#include "transport-pty.h"
 #include "transport-unix.h"
 #ifdef HAVE_LIBYAML
 #include "ds1963s-emulator-yaml.h"
@@ -37,10 +38,11 @@
 static const struct option options[] = {
 	{ "config",             1,      NULL,   'c' },
 	{ "device",             1,      NULL,   'd' },
-	{ "help",               0,      NULL,   'h' }
+	{ "help",               0,      NULL,   'h' },
+	{ "transport",		1,	NULL,	't' }
 };
 
-const char optstr[] = "c:d:h";
+const char optstr[] = "c:d:ht:";
 
 void usage(const char *progname)
 {
@@ -50,6 +52,7 @@ void usage(const char *progname)
 	fprintf(stderr, "   -d --device=pathname  the unix socket to use as "
 	                "serial device.\n");
 	fprintf(stderr, "   -h --help             display the help menu.\n");
+	fprintf(stderr, "   -t --transport        transport to use.\n");
 }
 
 int main(int argc, char **argv)
@@ -60,10 +63,12 @@ int main(int argc, char **argv)
 	struct one_wire_bus bus;
 	const char *config_name;
 	const char *device_name;
+	const char *transport;
 	int i, o;
 
 	config_name = NULL;
 	device_name = UNIX_SOCKET_PATH;
+	transport   = "unix";
 	while ( (o = getopt_long(argc, argv, optstr, options, &i)) != -1) {
 		switch (o) {
 		case 'c':
@@ -75,6 +80,9 @@ int main(int argc, char **argv)
 		case 'h':
 			usage(argv[0]);
 			exit(EXIT_SUCCESS);
+		case 't':
+			transport = optarg;
+			break;
 		}
 	}
 
@@ -93,14 +101,21 @@ int main(int argc, char **argv)
 #endif
 	}
 
-	if ( (serial = transport_factory_new(TRANSPORT_UNIX)) == NULL) {
+	if ( (serial = transport_factory_new_by_name(transport)) == NULL) {
 		perror("transport_factory_new()");
 		exit(EXIT_FAILURE);
 	}
 
-	if (transport_unix_connect(serial, device_name) != 0) {
-		perror("transport_unix_connect()");
-		exit(EXIT_FAILURE);
+	if (serial->type == TRANSPORT_UNIX) {
+		if (transport_unix_connect(serial, device_name) != 0) {
+			perror("transport_unix_connect()");
+			exit(EXIT_FAILURE);
+		}
+	} else if (serial->type == TRANSPORT_PTY) {
+		struct transport_pty_data *data;
+
+		data = (struct transport_pty_data *)serial->private_data;
+		printf("Please use device %s\n", data->pathname_slave);
 	}
 
 	/* Connect the ds2480b to the host serial port and the 1-wire bus. */

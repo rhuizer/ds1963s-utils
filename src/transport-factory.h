@@ -25,12 +25,14 @@
 #include "transport.h"
 
 #define TRANSPORT_UNIX	1
+#define TRANSPORT_PTY	2
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 struct transport *transport_factory_new(int type);
+struct transport *transport_factory_new_by_name(const char *name);
 
 #ifdef __cplusplus
 };

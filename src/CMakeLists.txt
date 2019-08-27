@@ -13,7 +13,7 @@ add_subdirectory(ibutton)
 
 set(SOURCES ds1963s-common.c ds1963s-client.c ds1963s-device.c ds1963s-error.c
             ds2480b-device.c transport.c transport-factory.c transport-unix.c
-            coroutine.c 1-wire-bus.c)
+            transport-pty.c coroutine.c 1-wire-bus.c)
 add_library(ds1963s ${SOURCES})
 target_link_libraries(ds1963s ibutton)
 
