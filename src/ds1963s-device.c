@@ -677,14 +677,30 @@ ds1963s_dev_rom_function(struct ds1963s_device *dev)
 	byte = DS1963S_RX_BYTE(dev);
 
 	switch (byte) {
+	case 0x33:
+		DEBUG_LOG("[ds1963s|ROM] Read ROM Command\n");
+		fprintf(stderr, "Read ROM Command is not supported\n");
+		exit(EXIT_FAILURE);
 	case 0x3C:
 		DEBUG_LOG("[ds1963s|ROM] Overdrive skip ROM\n");
 		dev->RC = 0;
 		dev->OD = 1;
 		break;
+	case 0x55:
+		DEBUG_LOG("[ds1963s|ROM] Match ROM Command\n");
+		fprintf(stderr, "Match ROM Command is not supported\n");
+		exit(EXIT_FAILURE);
+	case 0x69:
+		DEBUG_LOG("[ds1963s|ROM] Overdrive Match Command\n");
+		fprintf(stderr, "Overdrive Match Command is not supported\n");
+		exit(EXIT_FAILURE);
 	case 0xA5:
 		DEBUG_LOG("[ds1963s|ROM] Resume\n");
 		ds1963s_dev_rom_command_resume(dev);
+		break;
+	case 0xCC:
+		DEBUG_LOG("[ds1963s|ROM] Skip ROM Command\n");
+		dev->RC = 0;
 		break;
 	case 0xF0:
 		DEBUG_LOG("[ds1963s|ROM] Search ROM\n");
@@ -695,7 +711,6 @@ ds1963s_dev_rom_function(struct ds1963s_device *dev)
 		break;
 	default:
 		DEBUG_LOG("[ds1963s|ROM] Unknown command %.2x\n", byte);
-		abort();
 		break;
 	}
 

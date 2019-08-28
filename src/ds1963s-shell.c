@@ -431,7 +431,7 @@ handle_write_scratchpad(void)
 		return;
 
 	if ( (s = strtok(NULL, " \t")) == NULL) {
-		printf("write expects 32 bytes of hexadecimal data\n");
+		printf("write expects up to 32 bytes of hexadecimal data\n");
 		return;
 	}
 
