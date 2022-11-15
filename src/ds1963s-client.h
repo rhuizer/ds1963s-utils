@@ -19,8 +19,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef __DS1963S_CLIENT_H
-#define __DS1963S_CLIENT_H
+#ifndef DS1963S_CLIENT_H
+#define DS1963S_CLIENT_H
 
 #include <stdint.h>
 #include "ibutton/shaib.h"
@@ -135,4 +135,4 @@ int ds1963s_client_hash_read(struct ds1963s_client *ctx, uint8_t hash[20]);
 };
 #endif	/* __cplusplus */
 
-#endif	/* !__DS1963S_CLIENT_H */
+#endif	/* !DS1963S_CLIENT_H */

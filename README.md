@@ -10,6 +10,9 @@ This is a command line utility that implements complex sequences of commands
 to perform common tasks.  It can be used to dump all information of a dongle,
 including the secrets into a descriptive text report or a yaml file.
 
+The secrets can be dumped using a pure software side-channel attack based on
+partial key overwrites.
+
 - ds1963s-shell
 
 Is a low-level shell utility that can be used to execute low-level commands

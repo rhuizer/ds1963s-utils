@@ -1,9 +1,3 @@
-cmake_minimum_required(VERSION 3.1)
-project(ds1963s-utils)
-
-set(CMAKE_BUILD_TYPE Debug)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -std=gnu99")
-
 FIND_LIBRARY(LIBYAML NAMES yaml libyaml)
 if (LIBYAML)
     add_definitions(-DHAVE_LIBYAML)

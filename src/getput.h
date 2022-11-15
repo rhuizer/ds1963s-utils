@@ -20,8 +20,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef __GETPUT_H
-#define __GETPUT_H
+#ifndef GETPUT_H
+#define GETPUT_H
 
 #include <stdint.h>
 
@@ -156,4 +156,4 @@
 		(cp)[0] = (value);					\
 	} while (0)
 
-#endif	/* !__GETPUT_H */
+#endif	/* !GETPUT_H */

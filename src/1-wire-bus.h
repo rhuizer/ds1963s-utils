@@ -19,8 +19,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef __1_WIRE_BUS_H
-#define __1_WIRE_BUS_H
+#ifndef ONE_WIRE_BUS_H
+#define ONE_WIRE_BUS_H
 
 #include <inttypes.h>
 #include "coroutine.h"
@@ -83,6 +83,8 @@ void one_wire_bus_member_init(struct one_wire_bus_member *member);
 int  one_wire_bus_member_add(struct one_wire_bus_member *, struct one_wire_bus *);
 void one_wire_bus_member_remove(struct one_wire_bus_member *);
 
+void one_wire_bus_member_master_set(struct one_wire_bus_member *member);
+
 void one_wire_bus_member_reset_pulse(struct one_wire_bus_member *);
 int  one_wire_bus_member_tx_bit(struct one_wire_bus_member *, int);
 int  one_wire_bus_member_rx_bit(struct one_wire_bus_member *);
@@ -93,7 +95,6 @@ void one_wire_bus_member_write_bit(struct one_wire_bus_member *member, int bit);
 void one_wire_bus_member_write_byte(struct one_wire_bus_member *member, int byte);
 int  one_wire_bus_member_read_bit(struct one_wire_bus_member *member, int bit);
 int  one_wire_bus_member_read_byte(struct one_wire_bus_member *member, int byte);
-
 
 #ifdef __cplusplus
 };

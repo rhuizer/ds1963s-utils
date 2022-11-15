@@ -493,7 +493,7 @@ ds2480b_dev_data_mode(struct ds2480b_device *dev, uint8_t byte, int checked)
 
 		for (int i = 0; i < 64; i++) {
 			int b1 = ds2480b_dev_bus_rx_bit(dev);
-			int b2 = ds2480b_dev_bus_rx_bit(dev);
+			[[maybe_unused]] int b2 = ds2480b_dev_bus_rx_bit(dev);
 
 #if 0
 			/* Conflict */

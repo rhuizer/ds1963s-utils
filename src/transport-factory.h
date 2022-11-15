@@ -19,8 +19,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef __TRANSPORT_FACTORY_H
-#define __TRANSPORT_FACTORY_H
+#ifndef TRANSPORT_FACTORY_H
+#define TRANSPORT_FACTORY_H
 
 #include "transport.h"
 

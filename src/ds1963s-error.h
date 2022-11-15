@@ -1,5 +1,5 @@
-#ifndef __DS1963S_ERROR_H
-#define __DS1963S_ERROR_H
+#ifndef DS1963S_ERROR_H
+#define DS1963S_ERROR_H
 
 #include <stdarg.h>
 

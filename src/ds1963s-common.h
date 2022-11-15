@@ -19,8 +19,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef __DS1963S_COMMON_H
-#define __DS1963S_COMMON_H
+#ifndef DS1963S_COMMON_H
+#define DS1963S_COMMON_H
 
 #include <stdio.h>
 #include <stdint.h>

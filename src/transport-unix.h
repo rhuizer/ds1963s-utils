@@ -19,8 +19,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef __TRANSPORT_UNIX_H
-#define __TRANSPORT_UNIX_H
+#ifndef TRANSPORT_UNIX_H
+#define TRANSPORT_UNIX_H
 
 #include <stddef.h>
 #include "transport.h"

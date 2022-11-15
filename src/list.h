@@ -22,8 +22,8 @@
  * with the one found in the Linux kernel (in include/linux/list.h).
  */
 
-#ifndef __LIBPTRACE_LIST_H
-#define __LIBPTRACE_LIST_H
+#ifndef LIBPTRACE_LIST_H
+#define LIBPTRACE_LIST_H
 
 #include <stdio.h>
 #include <stdint.h>

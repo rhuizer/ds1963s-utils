@@ -19,8 +19,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef __DS1963S_EMULATOR_YAML
-#define __DS1963S_EMULATOR_YAML
+#ifndef DS1963S_EMULATOR_YAML
+#define DS1963S_EMULATOR_YAML
 
 #include "ds1963s-device.h"
 

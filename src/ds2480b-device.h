@@ -19,8 +19,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef __DS2480_DEVICE_H
-#define __DS2480_DEVICE_H
+#ifndef DS2480_DEVICE_H
+#define DS2480_DEVICE_H
 
 #include "1-wire-bus.h"
 

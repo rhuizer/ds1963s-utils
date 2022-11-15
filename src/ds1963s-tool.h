@@ -1,5 +1,5 @@
-#ifndef __DS1963S_TOOL_H
-#define __DS1963S_TOOL_H
+#ifndef DS1963S_TOOL_H
+#define DS1963S_TOOL_H
 
 #include <inttypes.h>
 #include "ds1963s-client.h"
